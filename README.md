@@ -1,2 +1,2 @@
-# detr
-Object Detection
+# DEtection TRansformers
+Transformer-based object detection
