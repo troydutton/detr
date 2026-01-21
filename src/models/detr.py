@@ -1,39 +1,82 @@
 from torch import nn, Tensor
-from typing import Any, Dict
-from models.backbone import Backbone, build_backbone
-from models.transformer import Transformer, build_transformer
+import torch
+import math
+from typing import Dict
+from models.backbone import Backbone
+from models.transformer import Transformer
 from utils.misc import take_annotation_from
+from models.layers import MultiLayerPerceptron
 
 
 class DETR(nn.Module):
     """
-    Implementation of the Detection Transformer architecture from ["End-to-End Object Detection with Transformers"](https://arxiv.org/abs/2005.12872).
+    Implementation of ["End-to-End Object Detection with Transformers"](https://arxiv.org/abs/2005.12872).
 
     Args:
-        backbone_args: Arguments to construct the backbone model. See `models.backbone.Backbone`.
-        transformer_args: Arguments to construct the transformer model. See `models.transformer.Transformer`.
         num_classes: Number of object classes.
         pretrained_weights: Path to a pretrained weights file.
+        kwargs: Arguments to construct the backbone and transformer.
+            See `models.backbone.Backbone` and `models.transformer.Transformer`.
     """
 
-    def __init__(
-        self,
-        backbone_args: Dict[str, Any],
-        transformer_args: Dict[str, Any],
-        num_classes: int,
-        pretrained_weights: str = None,
-    ) -> None:
+    def __init__(self, num_classes: int, pretrained_weights: str = None, **kwargs) -> None:
         super().__init__()
-
-        self.backbone = build_backbone(**backbone_args)
-
-        self.transformer = build_transformer(**transformer_args)
 
         self.num_classes = num_classes
 
-    def forward(self, image: Tensor) -> Dict[str, Tensor]:
-        pass
+        # Create & initialize the bounding box and classification heads
+        self.bbox_head = MultiLayerPerceptron(
+            input_dim=(embed_dim := kwargs["transformer"]["embed_dim"]),
+            hidden_dim=embed_dim,
+            output_dim=4,
+            num_layers=3,
+        )
+        self.class_head = nn.Linear(embed_dim, num_classes)
+
+        # Build the backbone and transformer
+        self.backbone = Backbone(**kwargs["backbone"])
+        self.transformer = Transformer(**kwargs["transformer"])
+
+        self._initialize_weights(pretrained_weights=pretrained_weights)
+
+    def forward(self, images: Tensor) -> Dict[str, Tensor]:
+        """
+        Predict
+
+        Args:
+            images: A batch of images with shape (batch, channels, height, width).
+
+        Returns:
+            predictions: A dictionary containing normalized CXCYWH `boxes` and raw class `logits`.
+        """
+
+        # Extract image features
+        features, feature_pos = self.backbone(images)
+
+        # Decode object queries for the image
+        object_queries = self.transformer(features, feature_pos)
+
+        # Predict bounding boxes and class logits
+        predictions = {
+            "boxes": self.bbox_head(object_queries).sigmoid(),
+            "logits": self.class_head(object_queries),
+        }
+
+        return predictions
 
     @take_annotation_from(forward)
     def __call__(self, *args, **kwargs):
         return nn.Module.__call__(self, *args, **kwargs)
+
+    def _initialize_weights(self, pretrained_weights: str = None) -> None:
+
+        # TODO: Add logging, handle missing/unexpected keys
+        if pretrained_weights is not None:
+            state_dict = torch.load(pretrained_weights, map_location="cpu")
+
+            self.load_state_dict(state_dict, strict=False)
+        else:
+            # We bias the classifier to predict a small probability for objects
+            # because the majority of queries are not matched to objects
+            bias = -math.log((1 - (object_prob := 0.01)) / object_prob)
+            self.class_head.bias.data = torch.ones(self.num_classes) * bias
