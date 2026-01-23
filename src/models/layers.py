@@ -43,18 +43,18 @@ class MultiLayerPerceptron(nn.Module):
 
         self._initialize_weights()
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, input_tensor: Tensor) -> Tensor:
         """
         Forward pass of the multi-layer perceptron.
 
         Args:
-            x: Input tensor of shape (batch_size, input_dim).
+            input_tensor: Input tensor of shape (batch_size, input_dim).
 
         Returns:
-            y: Output tensor of shape (batch_size, output_dim).
+            output_tensor: Output tensor of shape (batch_size, output_dim).
         """
 
-        return self.mlp(x)
+        return self.mlp(input_tensor)
 
     @take_annotation_from(forward)
     def __call__(self, *args, **kwargs):

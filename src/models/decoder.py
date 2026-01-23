@@ -28,8 +28,9 @@ class TransformerDecoder(nn.Module):
     ) -> None:
         super().__init__()
 
-        # Learnable spatial anchors for object queries
-        self.query_pos = nn.Embedding(num_queries, embed_dim)
+        self.queries = nn.Embedding(num_queries, embed_dim)  # Learnable content for initializing object queries
+        self.query_pos = nn.Embedding(num_queries, embed_dim)  # Learnable positional embeddings for object queries
+
         self.layers = nn.ModuleList(
             [
                 TransformerDecoderLayer(
@@ -56,12 +57,13 @@ class TransformerDecoder(nn.Module):
             queries: Object queries with shape (batch_size, num_queries, embed_dim).
         """
 
-        # Expand the query positional embeddings to the batch size
+        # Learnable content and positional embeddings for object queries
+        queries = self.queries.weight.unsqueeze(0)
         query_pos = self.query_pos.weight.unsqueeze(0)
-        query_pos = query_pos.expand(features.shape[0], -1, -1)
 
-        # The actual content of the object queries is initialized to zeros
-        queries = torch.zeros_like(query_pos)
+        # Expand the queries across the batch size
+        queries = queries.expand(features.shape[0], -1, -1)
+        query_pos = query_pos.expand(features.shape[0], -1, -1)
 
         for layer in self.layers:
             queries = layer(
@@ -157,14 +159,14 @@ class TransformerDecoderLayer(nn.Module):
         # Self-attention
         v = self.norm1(queries)
         q = k = v if query_pos is None else v + query_pos
-        queries = queries + self.dropout1(self.self_attention(q, k, v)[0])
+        queries = queries + self.dropout1(self.self_attention(q, k, v, need_weights=False)[0])
 
         # Cross-attention
         q = self.norm2(queries)
         q = q if query_pos is None else q + query_pos
         k = features if feature_pos is None else features + feature_pos
         v = features
-        queries = queries + self.dropout2(self.cross_attention(q, k, v)[0])
+        queries = queries + self.dropout2(self.cross_attention(q, k, v, need_weights=False)[0])
 
         # Feedforward Network
         queries = queries + self.dropout3(self.ffn(self.norm3(queries)))

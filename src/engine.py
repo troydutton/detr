@@ -8,20 +8,20 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from models import Model
-from criterion import Criterion
-from evaluators import Evaluator
+from models import ModelType
+from criterion import CriterionType
+from evaluators import EvaluatorType
 from utils.misc import send_to_device
 from torch import device
 from torch.optim.lr_scheduler import _LRScheduler
 
 
 def train(
-    model: Model,
+    model: ModelType,
     optimizer: Optimizer,
     scheduler: _LRScheduler,
-    criterion: Criterion,
-    evaluator: Evaluator,
+    criterion: CriterionType,
+    evaluator: EvaluatorType,
     train_data: DataLoader,
     val_data: DataLoader,
     num_epochs: int,
@@ -80,9 +80,9 @@ def train(
 
 
 def train_one_epoch(
-    model: Model,
+    model: ModelType,
     optimizer: Optimizer,
-    criterion: Criterion,
+    criterion: CriterionType,
     scheduler: _LRScheduler,
     data: DataLoader,
     epoch: int,
@@ -129,9 +129,9 @@ def train_one_epoch(
 
 @torch.no_grad()
 def evaluate(
-    model: Model,
-    criterion: Criterion,
-    evaluator: Evaluator,
+    model: ModelType,
+    criterion: CriterionType,
+    evaluator: EvaluatorType,
     data: DataLoader,
     epoch: int,
     device: device,
@@ -148,7 +148,9 @@ def evaluate(
         device: Device to evaluate on.
 
     Returns:
-        losses, metrics: Dictionaries of the average losses and metrics. 
+        losses: Dictionary of average losses.
+        #### metrics
+        Dictionary of evaluation metrics.
     """
 
     # Set the model to evaluation mode

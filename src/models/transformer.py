@@ -1,6 +1,6 @@
 from torch import nn, Tensor
-from src.models.decoder import TransformerDecoder
-from src.models.encoder import TransformerEncoder
+from models.decoder import TransformerDecoder
+from models.encoder import TransformerEncoder
 from utils.misc import take_annotation_from
 
 
@@ -50,15 +50,24 @@ class Transformer(nn.Module):
     def forward(self, features: Tensor, feature_pos: Tensor = None) -> Tensor:
         """
         Args:
-            features: Features with shape (batch_size, num_features, embed_dim).
-            feature_pos: Feature positional embeddings with shape (batch_size, num_features, embed_dim).
+            features: Features with shape (batch_size, height, width, embed_dim).
+            feature_pos: Feature positional embeddings with shape (batch_size, height, width, embed_dim).
 
         Returns:
             queries: Object queries with shape (batch_size, num_queries, embed_dim).
         """
 
+        assert features.ndim == 4, f"Expected features of shape (batch_size, height, width, embed_dim), got {features.shape = }"
+
+        # Collapse the spatial dimensions
+        batch_size, height, width, embed_dim = features.shape
+        features = features.view(batch_size, height * width, embed_dim)
+        feature_pos = None if feature_pos is None else feature_pos.view(batch_size, height * width, embed_dim)
+
+        # Encode the features
         features = self.encoder(features, feature_pos)
 
+        # Decode object queries
         queries = self.decoder(features, feature_pos)
 
         return queries
