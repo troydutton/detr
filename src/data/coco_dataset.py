@@ -1,6 +1,6 @@
 from pathlib import Path
 import torch
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Union
 
 from PIL import Image
 from pycocotools.coco import COCO
@@ -29,7 +29,7 @@ class CocoDataset(Dataset):
         transforms: Transformations to apply to each image, optional.
     """
 
-    def __init__(self, dataset_root: str, split: str, transforms: Transformation = None) -> None:
+    def __init__(self, dataset_root: Union[str, Path], split: str, transforms: Transformation = None) -> None:
         logger.info(f"Loading '{split}' split from '{dataset_root}'.")
         self.root = Path(dataset_root)
         self.split = split
@@ -39,8 +39,13 @@ class CocoDataset(Dataset):
         with silence_stdout():
             self.coco = COCO(self.root / f"annotations/instances_{split}.json")
             self.coco.createIndex()
-
         self.image_ids = list(self.coco.imgs.keys())
+
+        # Create a mapping from category id to contiguous 0-indexed labels
+        category_ids = sorted(self.coco.getCatIds())
+        self.category_id_to_label = {cat_id: i for i, cat_id in enumerate(category_ids)}
+        self.num_classes = len(self.category_id_to_label)
+
 
     def __len__(self):
         return len(self.image_ids)
@@ -116,7 +121,7 @@ class CocoDataset(Dataset):
 
         # Get per-object annotations
         boxes = torch.tensor([obj["bbox"] for obj in annotations], dtype=torch.float32).reshape(-1, 4)
-        labels = torch.tensor([obj["category_id"] for obj in annotations], dtype=torch.int64)
+        labels = torch.tensor([self.category_id_to_label[obj["category_id"]] for obj in annotations], dtype=torch.int64)
         area = torch.tensor([obj["area"] for obj in annotations], dtype=torch.float32)
         iscrowd = torch.zeros_like(labels)
 
@@ -154,11 +159,11 @@ class CocoDataset(Dataset):
             class_weights: Weights for each class with shape (num_classes)
         """
 
-        # Count the number of occurences of each leaf
-        frequencies = torch.zeros(len(self.coco.cats))
+        # Count the number of occurences of each class
+        frequencies = torch.zeros(self.num_classes)
 
         for annotation in self.coco.anns.values():
-            frequencies += annotation["category_id"]
+            frequencies[self.category_id_to_label[annotation["category_id"]]] += 1
 
         # Normalization factor s.t. the expected weight is 1
         # When β=1 this reduces to  (Σ n_i) / num_classes
@@ -169,7 +174,7 @@ class CocoDataset(Dataset):
         weights[frequencies > 0] = k * frequencies[frequencies > 0].pow(-beta)
 
         return weights
-    
+
     def get_category_names(self) -> List[str]:
         """
         Retrieve the category names in the dataset.
