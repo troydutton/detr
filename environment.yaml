@@ -12,12 +12,14 @@ dependencies:
   - pandas
   - pillow
   - matplotlib
+  - pycocotools
   - accelerate
   - transformers
   - timm
   - wandb
   - pytest
-
+  - ipykernel
+  
   - pip:
     - torch
     - torchvision
