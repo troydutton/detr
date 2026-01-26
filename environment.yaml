@@ -8,6 +8,7 @@ dependencies:
   - pip
   - numpy<2
   - scipy
+  - scipy-stubs
   - scikit-learn
   - pandas
   - pillow
