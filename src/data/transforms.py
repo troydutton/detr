@@ -1,4 +1,4 @@
-from typing import Any, Dict, Sequence, Tuple, Union, Protocol, List
+from typing import Any, Dict, List, Protocol, Sequence, Tuple, Union
 
 import torch
 import torchvision.transforms.v2 as T
@@ -7,7 +7,6 @@ from torch import Tensor
 from torchvision.ops.boxes import box_area, box_convert
 from torchvision.transforms.v2.functional import erase
 from torchvision.tv_tensors import BoundingBoxes, wrap
-
 
 IMNET_MEAN = [0.485, 0.456, 0.406]
 IMNET_STD = [0.229, 0.224, 0.225]

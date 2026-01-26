@@ -20,6 +20,8 @@ dependencies:
   - wandb
   - pytest
   - ipykernel
+  - black
+  - isort
   
   - pip:
     - torch

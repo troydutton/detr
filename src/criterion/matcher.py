@@ -1,12 +1,14 @@
 from __future__ import annotations
-from torch import nn, Tensor
-from torch.nn import functional as F
-from typing import Dict, List, Tuple, TYPE_CHECKING
-from utils.misc import take_annotation_from
-from torchvision.ops.boxes import box_convert, generalized_box_iou
-from scipy.optimize import linear_sum_assignment
+
+from typing import TYPE_CHECKING, Dict, List, Tuple
 
 import torch
+from scipy.optimize import linear_sum_assignment
+from torch import Tensor, nn
+from torch.nn import functional as F
+from torchvision.ops.boxes import box_convert, generalized_box_iou
+
+from utils.misc import take_annotation_from
 
 if TYPE_CHECKING:
     from criterion.criterion import Targets

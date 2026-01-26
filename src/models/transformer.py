@@ -1,4 +1,5 @@
-from torch import nn, Tensor
+from torch import Tensor, nn
+
 from models.decoder import TransformerDecoder
 from models.encoder import TransformerEncoder
 from utils.misc import take_annotation_from

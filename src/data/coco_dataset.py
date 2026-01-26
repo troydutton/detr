@@ -1,18 +1,18 @@
+import logging
 from pathlib import Path
-import torch
 from typing import Any, Dict, List, Tuple, Union
 
+import torch
 from PIL import Image
 from pycocotools.coco import COCO
 from torch import Tensor
+from torch.utils.data import Dataset
 from torchvision.ops.boxes import box_convert, clip_boxes_to_image
+from torchvision.transforms.v2.functional import to_dtype, to_image
 from torchvision.tv_tensors import BoundingBoxes
-from torchvision.transforms.v2.functional import to_image, to_dtype
 
 from data.transforms import Annotations, Transformation
-from torch.utils.data import Dataset
 from utils.misc import silence_stdout
-import logging
 
 COCOAnnotations = List[Dict[str, Any]]
 
@@ -45,7 +45,6 @@ class CocoDataset(Dataset):
         category_ids = sorted(self.coco.getCatIds())
         self.category_id_to_label = {cat_id: i for i, cat_id in enumerate(category_ids)}
         self.num_classes = len(self.category_id_to_label)
-
 
     def __len__(self):
         return len(self.image_ids)

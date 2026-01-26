@@ -1,4 +1,5 @@
 from math import sqrt
+
 from torch import Tensor, nn
 
 from utils.misc import take_annotation_from
