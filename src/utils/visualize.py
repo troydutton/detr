@@ -1,8 +1,9 @@
-from torch import Tensor
-import torch
-from typing import Dict, List, Tuple
-from PIL import Image, ImageDraw, ImageFont
 import random
+from typing import Dict, List, Tuple
+
+import torch
+from PIL import Image, ImageDraw, ImageFont
+from torch import Tensor
 from torchvision.ops.boxes import box_convert
 
 
@@ -35,7 +36,7 @@ def draw_annotations(
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()
 
-    # Convert boxes to xyxy 
+    # Convert boxes to xyxy
     boxes = box_convert(boxes, box_format, "xyxy")
 
     # Scale boxes by the image size

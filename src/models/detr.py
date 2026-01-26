@@ -1,12 +1,14 @@
-from torch import nn, Tensor
-import torch
+import logging
 import math
 from typing import Dict
+
+import torch
+from torch import Tensor, nn
+
 from models.backbone import Backbone
+from models.layers import MultiLayerPerceptron
 from models.transformer import Transformer
 from utils.misc import take_annotation_from
-from models.layers import MultiLayerPerceptron
-import logging
 
 logger = logging.getLogger("detr")
 

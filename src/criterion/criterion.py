@@ -1,12 +1,14 @@
 from __future__ import annotations
-import torch.nn.functional as F
-from torchvision.ops.boxes import generalized_box_iou, box_convert, box_iou
-from torch import nn, Tensor
-from typing import Optional, Tuple
-from typing import Dict, List, TYPE_CHECKING
+
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+
 import torch
-from utils.misc import take_annotation_from
+import torch.nn.functional as F
+from torch import Tensor, nn
+from torchvision.ops.boxes import box_convert, box_iou, generalized_box_iou
+
 from criterion.matcher import HungarianMatcher
+from utils.misc import take_annotation_from
 
 if TYPE_CHECKING:
     from criterion.matcher import Matches

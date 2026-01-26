@@ -4,16 +4,16 @@ from typing import Dict, Tuple
 
 import torch
 import wandb
+from torch import device
 from torch.optim import Optimizer
+from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from models import ModelType
 from criterion import CriterionType
 from evaluators import EvaluatorType
+from models import ModelType
 from utils.misc import send_to_device
-from torch import device
-from torch.optim.lr_scheduler import _LRScheduler
 
 
 def train(
@@ -124,7 +124,6 @@ def train_one_epoch(
 
         # Log the loss
         wandb.log({"train": {"loss": losses}}, step=wandb.run.step + len(images))
-
 
 
 @torch.no_grad()

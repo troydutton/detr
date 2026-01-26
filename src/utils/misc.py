@@ -1,14 +1,12 @@
 import os
 import random
+from contextlib import contextmanager, redirect_stdout
 from typing import Callable, Dict, List, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
-from torch import device
-from torch import Tensor
+from torch import Tensor, device
 from typing_extensions import ParamSpec
-from contextlib import contextmanager, redirect_stdout
-import os
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -62,11 +60,12 @@ def set_random_seed(seed: int) -> None:
     os.environ["PYTHONHASHSEED"] = str(seed)
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
+
 @contextmanager
 def silence_stdout():
     """
     Context manager to silence stdout.
     """
-    with open(os.devnull, 'w') as devnull:
+    with open(os.devnull, "w") as devnull:
         with redirect_stdout(devnull):
             yield

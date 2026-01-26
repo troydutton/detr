@@ -1,7 +1,7 @@
-import torch
-from torch import nn, Tensor
-from utils.misc import take_annotation_from
+from torch import Tensor, nn
+
 from models.layers import MultiLayerPerceptron
+from utils.misc import take_annotation_from
 
 
 class TransformerDecoder(nn.Module):

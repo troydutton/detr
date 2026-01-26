@@ -1,10 +1,12 @@
-import torch.nn as nn
 import logging
+from typing import List, Protocol, Tuple
+
 import timm
-from typing import List, Tuple, Protocol
-from torch import Tensor
-from models.positional_embedding import generate_positional_embedding_sine
+import torch.nn as nn
 from timm.models import FeatureInfo
+from torch import Tensor
+
+from models.positional_embedding import generate_positional_embedding_sine
 
 logger = logging.getLogger("detr")
 

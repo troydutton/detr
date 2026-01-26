@@ -1,8 +1,9 @@
 import json
-import torch
 from pathlib import Path
-from PIL import Image
+
 import pytest  # type: ignore
+import torch
+from PIL import Image
 
 from data.coco_dataset import CocoDataset
 from data.transforms import make_transformations
@@ -18,7 +19,7 @@ def coco_path(tmp_path: Path) -> Path:
 
     root = tmp_path
     split = "val2017"
-    
+
     # Replicate COCO directory structure
     (root / "annotations").mkdir(parents=True, exist_ok=True)
     (root / split).mkdir(parents=True, exist_ok=True)
@@ -61,12 +62,12 @@ def test_coco_dataset_basic(coco_path: Path) -> None:
 
     # Verify image
     assert isinstance(image, torch.Tensor)
-    assert image.shape == (3, 80, 100) # (C, H, W)
+    assert image.shape == (3, 80, 100)  # (C, H, W)
 
     # Verify image fields
     assert target["image_id"].item() == 1
-    assert target["orig_size"].tolist() == [80, 100] # (H, W)
-    assert target["size"].tolist() == [80, 100] # (H, W)
+    assert target["orig_size"].tolist() == [80, 100]  # (H, W)
+    assert target["size"].tolist() == [80, 100]  # (H, W)
 
     # Verify boxes
     boxes = target["boxes"]
@@ -118,7 +119,7 @@ def test_coco_dataset_transforms(coco_path: Path) -> None:
     image, target = dataset[0]
 
     # Verify image shape after resize
-    assert image.shape == (3, 200, 200) # (C, H, W)
+    assert image.shape == (3, 200, 200)  # (C, H, W)
 
     # Verify size in target
     assert target["size"].tolist() == [200, 200]

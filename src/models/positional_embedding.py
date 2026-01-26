@@ -1,6 +1,7 @@
+import math
+
 import torch
 from torch import Tensor
-import math
 
 
 def generate_positional_embedding_sine(input_tensor: Tensor, temperature: float = 10000.0) -> Tensor:
