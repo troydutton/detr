@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
-from torchvision.ops.boxes import box_convert, box_iou, generalized_box_iou
+from torchvision.ops.boxes import box_convert, generalized_box_iou
 
 from criterion.matcher import HungarianMatcher
 from utils.misc import take_annotation_from
@@ -59,8 +59,8 @@ class SetCriterion(nn.Module):
         """
         matched_indices = self.matcher(predictions, targets)
 
-        box_loss, giou_loss = self.calculate_box_losses(predictions, targets, matched_indices)
-        class_loss = self.calculate_class_loss(predictions, targets, matched_indices)
+        box_loss, giou_loss = self._calculate_box_losses(predictions, targets, matched_indices)
+        class_loss = self._calculate_class_loss(predictions, targets, matched_indices)
 
         # Weighted sum
         losses = {"box": box_loss, "giou": giou_loss, "class": class_loss}
@@ -68,7 +68,7 @@ class SetCriterion(nn.Module):
 
         return losses
 
-    def calculate_box_losses(self, predictions: Dict[str, Tensor], targets: Targets, matched_indices: Matches) -> Tuple[Tensor, Tensor]:
+    def _calculate_box_losses(self, predictions: Dict[str, Tensor], targets: Targets, matched_indices: Matches) -> Tuple[Tensor, Tensor]:
         """
         Calculate L1 and GIoU loss between matched predictions and target boxes.
 
@@ -100,7 +100,7 @@ class SetCriterion(nn.Module):
 
         return box_loss, giou_loss
 
-    def calculate_class_loss(self, predictions: Dict[str, Tensor], targets: Targets, matched_indices: Matches) -> Tensor:
+    def _calculate_class_loss(self, predictions: Dict[str, Tensor], targets: Targets, matched_indices: Matches) -> Tensor:
         # Select the matched predictions and targets
         batch_indices = torch.cat([torch.full_like(src, i) for i, (src, _) in enumerate(matched_indices)])
         query_indices = torch.cat([indices for (indices, _) in matched_indices])
