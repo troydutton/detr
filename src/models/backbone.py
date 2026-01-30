@@ -67,7 +67,7 @@ class Backbone(nn.Module):
 class BackboneType(Protocol):
     feature_info: FeatureInfo
 
-    def __call__(self, x: Tensor) -> List[Tensor]: ...
+    def __call__(self, Images: Tensor) -> List[Tensor]: ...
 
 
 class ProjectionType(Protocol):

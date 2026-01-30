@@ -10,18 +10,18 @@ from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from criterion import CriterionType
-from evaluators import EvaluatorType
-from models import ModelType
+from criterion import Criterion
+from evaluators import Evaluator
+from models import Model
 from utils.misc import send_to_device
 
 
 def train(
-    model: ModelType,
+    model: Model,
     optimizer: Optimizer,
     scheduler: _LRScheduler,
-    criterion: CriterionType,
-    evaluator: EvaluatorType,
+    criterion: Criterion,
+    evaluator: Evaluator,
     train_data: DataLoader,
     val_data: DataLoader,
     num_epochs: int,
@@ -80,9 +80,9 @@ def train(
 
 
 def train_one_epoch(
-    model: ModelType,
+    model: Model,
     optimizer: Optimizer,
-    criterion: CriterionType,
+    criterion: Criterion,
     scheduler: _LRScheduler,
     data: DataLoader,
     epoch: int,
@@ -128,9 +128,9 @@ def train_one_epoch(
 
 @torch.no_grad()
 def evaluate(
-    model: ModelType,
-    criterion: CriterionType,
-    evaluator: EvaluatorType,
+    model: Model,
+    criterion: Criterion,
+    evaluator: Evaluator,
     data: DataLoader,
     epoch: int,
     device: device,
@@ -175,6 +175,6 @@ def evaluate(
 
     # Calculate the average losses and metrics
     losses = {k: v / len(data) for k, v in losses.items()}
-    metrics = evaluator.evaluate()
+    metrics = evaluator.compute()
 
     return losses, metrics

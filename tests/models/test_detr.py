@@ -1,6 +1,6 @@
 import torch
 
-from models.detr import DETR
+from models import DETR
 
 
 def test_detr_forward() -> None:

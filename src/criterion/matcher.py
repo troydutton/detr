@@ -4,19 +4,18 @@ from typing import TYPE_CHECKING, Dict, List, Tuple
 
 import torch
 from scipy.optimize import linear_sum_assignment
-from torch import Tensor, nn
+from torch import Tensor
 from torch.nn import functional as F
 from torchvision.ops.boxes import box_convert, generalized_box_iou
 
-from utils.misc import take_annotation_from
-
 if TYPE_CHECKING:
-    from criterion.criterion import Targets
+    from data import Target
+    from models import Predictions
 
-Matches = List[Tuple[Tensor, Tensor]]
+MatchIndices = List[Tuple[Tensor, Tensor]]
 
 
-class HungarianMatcher(nn.Module):
+class HungarianMatcher:
     """
     Hungarian Matching algorithm for Object Detection tasks.
 
@@ -27,14 +26,12 @@ class HungarianMatcher(nn.Module):
     """
 
     def __init__(self, cost_weights: Dict[str, float], alpha: float = 0.25, gamma: float = 2.0) -> None:
-        super().__init__()
-
         self.cost_weights = cost_weights
         self.alpha = alpha
         self.gamma = gamma
 
     @torch.no_grad()
-    def forward(self, predictions: Dict[str, Tensor], targets: Targets) -> Matches:
+    def __call__(self, predictions: Predictions, targets: List[Target]) -> MatchIndices:
         """
         Perform Hungarian matching between predictions and targets.
 
@@ -84,7 +81,7 @@ class HungarianMatcher(nn.Module):
 
         return matched_indices
 
-    def _calculate_box_costs(self, prediction_boxes: Tensor, target_boxes: Tensor) -> Tensor:
+    def _calculate_box_costs(self, prediction_boxes: Tensor, target_boxes: Tensor) -> Tuple[Tensor, Tensor]:
         """
         Calculate L1 and GIoU costs between prediction and target boxes.
 
@@ -133,7 +130,3 @@ class HungarianMatcher(nn.Module):
         class_cost = pos_class_cost[..., target_labels] - neg_class_cost[..., target_labels]  # (num_preds, num_classes)
 
         return class_cost
-
-    @take_annotation_from(forward)
-    def __call__(self, *args, **kwargs):
-        return nn.Module.__call__(self, *args, **kwargs)

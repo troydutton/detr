@@ -1,4 +1,6 @@
-from typing import Any, Dict, List, Protocol, Sequence, Tuple, Union
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, List, Protocol, Sequence, Tuple, Union
 
 import torch
 import torchvision.transforms.v2 as T
@@ -12,11 +14,12 @@ IMNET_MEAN = [0.485, 0.456, 0.406]
 IMNET_STD = [0.229, 0.224, 0.225]
 LABEL_KEYS = ["boxes", "labels", "area", "iscrowd"]
 
-Annotations = Dict[str, Union[Tensor, BoundingBoxes, Any]]
+if TYPE_CHECKING:
+    from data import Target
 
 
 class Transformation(Protocol):
-    def __call__(self, image: Image.Image, annotations: Annotations) -> Tuple[Tensor, Annotations]: ...
+    def __call__(self, image: Image.Image, annotations: Target) -> Tuple[Tensor, Target]: ...
 
 
 class RandomErasingBoxAware:
@@ -48,7 +51,7 @@ class RandomErasingBoxAware:
         self.erased_threshold = erased_threshold
         self.random_erasing = T.RandomErasing(p=1.0, scale=scale, ratio=ratio, value=value)
 
-    def __call__(self, image: Tensor, annotations: Annotations) -> Tuple[Tensor, Annotations]:
+    def __call__(self, image: Tensor, annotations: Target) -> Tuple[Tensor, Target]:
         # Skip with probability 1 - p
         if torch.rand(1) > self.p:
             return image, annotations
@@ -141,7 +144,7 @@ def make_transformations(
 
     normalize_transform = T.Normalize(IMNET_MEAN, IMNET_STD) if normalize else T.Identity()
 
-    def _get_labels(sample: Tuple[Image.Image, Annotations]) -> List[Union[Tensor, BoundingBoxes, Any]]:
+    def _get_labels(sample: Tuple[Image.Image, Target]) -> List[Union[Tensor, BoundingBoxes]]:
         return [v for k, v in sample[1].items() if k in LABEL_KEYS]
 
     if split == "train":

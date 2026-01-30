@@ -2,21 +2,23 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 
+import PIL.Image
 import torch
-from PIL import Image
 from pycocotools.coco import COCO
 from torch import Tensor
 from torch.utils.data import Dataset
 from torchvision.ops.boxes import box_convert, clip_boxes_to_image
 from torchvision.transforms.v2.functional import to_dtype, to_image
-from torchvision.tv_tensors import BoundingBoxes
+from torchvision.tv_tensors import BoundingBoxes, Image
 
-from data.transforms import Annotations, Transformation
+from data.transforms import Transformation
 from utils.misc import silence_stdout
 
 COCOAnnotations = List[Dict[str, Any]]
 
 logger = logging.getLogger("detr")
+
+Target = Dict[str, Union[Tensor, BoundingBoxes]]
 
 
 class CocoDataset(Dataset):
@@ -41,7 +43,7 @@ class CocoDataset(Dataset):
             self.coco.createIndex()
         self.image_ids = list(self.coco.imgs.keys())
 
-        # Create a mapping from category id to contiguous 0-indexed labels
+        # Mapping from category ids to contiguous 0-indexed labels
         category_ids = sorted(self.coco.getCatIds())
         self.category_id_to_label = {cat_id: i for i, cat_id in enumerate(category_ids)}
         self.num_classes = len(self.category_id_to_label)
@@ -49,7 +51,7 @@ class CocoDataset(Dataset):
     def __len__(self):
         return len(self.image_ids)
 
-    def __getitem__(self, idx: int) -> Tuple[Tensor, Annotations]:
+    def __getitem__(self, idx: int) -> Tuple[Image, Target]:
         """
         Retrieve an image and its corresponding annotations.
 
@@ -76,7 +78,7 @@ class CocoDataset(Dataset):
         image_info = self.coco.loadImgs(image_id)[0]
 
         # Load the image
-        image = Image.open(self.root / self.split / image_info["file_name"]).convert("RGB")
+        image = PIL.Image.open(self.root / self.split / image_info["file_name"]).convert("RGB")
         w, h = image.size
 
         # Convert COCO object annotations to our expected format
@@ -100,7 +102,7 @@ class CocoDataset(Dataset):
 
         return image, target
 
-    def _convert_object_annotations(self, annotations: COCOAnnotations, height: int, width: int) -> Annotations:
+    def _convert_object_annotations(self, annotations: COCOAnnotations, height: int, width: int) -> Target:
         """
         Convert COCO annotations to an expected format.
 

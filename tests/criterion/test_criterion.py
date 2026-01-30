@@ -1,6 +1,6 @@
 import torch
 
-from criterion.criterion import SetCriterion
+from criterion import SetCriterion
 
 
 def test_set_criterion_forward() -> None:
@@ -35,4 +35,9 @@ def test_set_criterion_forward() -> None:
 
     criterion = SetCriterion(loss_weights=loss_weights)
 
-    _ = criterion(predictions, targets)
+    losses = criterion(predictions, targets)
+
+    assert "overall" in losses, "overall loss not computed."
+
+    for loss_name in loss_weights.keys():
+        assert loss_name in losses, f"{loss_name} loss not computed."

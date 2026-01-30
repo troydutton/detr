@@ -1,12 +1,11 @@
 import json
 from pathlib import Path
 
-import pytest  # type: ignore
+import pytest
 import torch
 from PIL import Image
 
-from data.coco_dataset import CocoDataset
-from data.transforms import make_transformations
+from data import CocoDataset, make_transformations
 
 
 @pytest.fixture

@@ -1,19 +1,24 @@
+from __future__ import annotations
+
 import logging
 import math
-from typing import Dict
+from typing import TYPE_CHECKING
 
 import torch
 from torch import Tensor, nn
 
 from models.backbone import Backbone
 from models.layers import MultiLayerPerceptron
+from models.model import Model
 from models.transformer import Transformer
-from utils.misc import take_annotation_from
+
+if TYPE_CHECKING:
+    from models.model import Predictions
 
 logger = logging.getLogger("detr")
 
 
-class DETR(nn.Module):
+class DETR(Model):
     """
     Implementation of ["End-to-End Object Detection with Transformers"](https://arxiv.org/abs/2005.12872).
 
@@ -44,7 +49,7 @@ class DETR(nn.Module):
 
         self._initialize_weights(pretrained_weights=pretrained_weights)
 
-    def forward(self, images: Tensor) -> Dict[str, Tensor]:
+    def forward(self, images: Tensor) -> Predictions:
         """
         Predict
 
@@ -69,15 +74,16 @@ class DETR(nn.Module):
 
         return predictions
 
-    @take_annotation_from(forward)
-    def __call__(self, *args, **kwargs):
-        return nn.Module.__call__(self, *args, **kwargs)
-
     def _initialize_weights(self, pretrained_weights: str = None) -> None:
         # Check for BatchNorm layers
         for module_name, module in self.backbone.named_modules():
             if isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
                 logger.warning(f"Backbone contains BatchNorm layer: {module_name}")
+
+        # We bias the classifier to predict a small probability for objects
+        # because the majority of queries are not matched to objects
+        bias = -math.log((1 - (object_prob := 0.01)) / object_prob)
+        self.class_head.bias.data = torch.ones(self.num_classes) * bias
 
         if pretrained_weights is not None:
             state_dict = torch.load(pretrained_weights, map_location="cpu")
@@ -89,8 +95,3 @@ class DETR(nn.Module):
 
             if incompatible.unexpected_keys:
                 logger.warning(f"Unexpected keys when loading pretrained weights: {incompatible.unexpected_keys}")
-        else:
-            # We bias the classifier to predict a small probability for objects
-            # because the majority of queries are not matched to objects
-            bias = -math.log((1 - (object_prob := 0.01)) / object_prob)
-            self.class_head.bias.data = torch.ones(self.num_classes) * bias
