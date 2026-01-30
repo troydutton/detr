@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, List, Protocol, Sequence, Tuple, Union
 
 import torch
@@ -57,7 +58,7 @@ class RandomErasingBoxAware:
             return image, annotations
 
         # Get the region to erase, returning early if we fail to find one
-        params = self.random_erasing._get_params([image])
+        params = self.random_erasing.make_params([image])
 
         if params["v"] is None:
             return image, annotations
@@ -136,6 +137,8 @@ def make_transformations(
     Returns:
         transformations: A callable that accepts an (image, annotations) pair, and returns the transformed pair.
     """
+
+    logging.info(f"Building '{split}' transformations with {resolution = }.")
 
     if square_resize:
         resize_transform = T.Resize(size=(resolution, resolution))

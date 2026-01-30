@@ -18,7 +18,6 @@ def test_detr_forward() -> None:
     kwargs = {
         "backbone": {
             "name": "resnet50s",
-            "embed_dim": embed_dim,
             "pretrained": False,
         },
         "transformer": {

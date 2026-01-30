@@ -18,6 +18,7 @@ dependencies:
   - transformers
   - timm
   - wandb
+  - hydra-core
   - pytest
   - ipykernel
   - ruff

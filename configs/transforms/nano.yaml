@@ -1,0 +1,14 @@
+train:
+  _target_: data.transforms.make_transformations
+  split: train
+  resolution: 384
+
+val:
+  _target_: data.transforms.make_transformations
+  split: val 
+  resolution: 384
+
+test:
+  _target_: data.transforms.make_transformations
+  split: test
+  resolution: 384

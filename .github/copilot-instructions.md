@@ -10,7 +10,7 @@ The primary modules are:
  - `datasets/`: Data loading (`coco_dataset.py`) and transformation utilities (`transforms.py`).
  - `criterion/`: Loss functions (`set_criterion.py`) and matching algorithms (`matcher.py`).
  - `evaluators/`: Evaluation metrics (`coco_evaluator.py`).
- - `utils/`: Utility functions for learning rate schedulers (`lr.py`), logging (`logger.py`), visualization (`visualize.py`), and miscellaneous helpers (`misc.py`).
+ - `utils/`: Utility functions for learning rate schedulers (`lr.py`), visualization (`visualize.py`), and miscellaneous helpers (`misc.py`).
 
 Both configuration files (`configs/`) and unit tests (`tests/`) are located outside the `src/` directory.
 

@@ -15,9 +15,6 @@ from data.transforms import Transformation
 from utils.misc import silence_stdout
 
 COCOAnnotations = List[Dict[str, Any]]
-
-logger = logging.getLogger("detr")
-
 Target = Dict[str, Union[Tensor, BoundingBoxes]]
 
 
@@ -32,7 +29,8 @@ class CocoDataset(Dataset):
     """
 
     def __init__(self, dataset_root: Union[str, Path], split: str, transforms: Transformation = None) -> None:
-        logger.info(f"Loading '{split}' split from '{dataset_root}'.")
+        logging.info(f"Loading '{split}' split from '{dataset_root}'.")
+
         self.root = Path(dataset_root)
         self.split = split
         self.transforms = transforms
@@ -160,6 +158,8 @@ class CocoDataset(Dataset):
             class_weights: Weights for each class with shape (num_classes)
         """
 
+        logging.info(f"Calculating class weights with {beta = }.")
+
         # Count the number of occurences of each class
         frequencies = torch.zeros(self.num_classes)
 
@@ -187,3 +187,10 @@ class CocoDataset(Dataset):
         category_names = [self.coco.cats[i]["name"] for i in sorted(self.coco.cats.keys())]
 
         return category_names
+
+
+def collate_fn(batch: List[Tuple[Image, Target]]) -> Tuple[Tensor, List[Target]]:
+    # Unzip the batch
+    images, targets = zip(*batch)
+
+    return torch.stack(images), list(targets)

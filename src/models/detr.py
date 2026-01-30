@@ -15,8 +15,6 @@ from models.transformer import Transformer
 if TYPE_CHECKING:
     from models.model import Predictions
 
-logger = logging.getLogger("detr")
-
 
 class DETR(Model):
     """
@@ -44,7 +42,7 @@ class DETR(Model):
         self.class_head = nn.Linear(embed_dim, num_classes)
 
         # Build the backbone and transformer
-        self.backbone = Backbone(**kwargs["backbone"])
+        self.backbone = Backbone(**kwargs["backbone"], embed_dim=embed_dim)
         self.transformer = Transformer(**kwargs["transformer"])
 
         self._initialize_weights(pretrained_weights=pretrained_weights)
@@ -78,7 +76,7 @@ class DETR(Model):
         # Check for BatchNorm layers
         for module_name, module in self.backbone.named_modules():
             if isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
-                logger.warning(f"Backbone contains BatchNorm layer: {module_name}")
+                logging.warning(f"Backbone contains BatchNorm layer: {module_name}")
 
         # We bias the classifier to predict a small probability for objects
         # because the majority of queries are not matched to objects
@@ -86,12 +84,14 @@ class DETR(Model):
         self.class_head.bias.data = torch.ones(self.num_classes) * bias
 
         if pretrained_weights is not None:
+            logging.info(f"Loading pretrained weights from '{pretrained_weights}'.")
+
             state_dict = torch.load(pretrained_weights, map_location="cpu")
 
             incompatible = self.load_state_dict(state_dict, strict=False)
 
             if incompatible.missing_keys:
-                logger.warning(f"Missing keys when loading pretrained weights: {incompatible.missing_keys}")
+                logging.warning(f"Missing keys when loading pretrained weights: {incompatible.missing_keys}")
 
             if incompatible.unexpected_keys:
-                logger.warning(f"Unexpected keys when loading pretrained weights: {incompatible.unexpected_keys}")
+                logging.warning(f"Unexpected keys when loading pretrained weights: {incompatible.unexpected_keys}")

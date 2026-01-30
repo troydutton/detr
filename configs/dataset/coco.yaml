@@ -1,0 +1,17 @@
+train:
+  _target_: data.coco_dataset.CocoDataset
+  dataset_root: /data/troy/datasets/coco
+  split: train2017
+  transforms: ${transforms.train}
+
+val:
+  _target_: data.coco_dataset.CocoDataset
+  dataset_root: /data/troy/datasets/coco
+  split: val2017
+  transforms: ${transforms.val}
+
+test:
+  _target_: data.coco_dataset.CocoDataset
+  dataset_root: /data/troy/datasets/coco
+  split: val2017
+  transforms: ${transforms.test}

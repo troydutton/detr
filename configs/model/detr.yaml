@@ -1,0 +1,18 @@
+_target_: models.detr.DETR
+
+pretrained_weights: Null
+
+backbone:
+  name: convnext_tiny 
+  pretrained: True
+
+transformer:
+  num_encoder_layers: 6
+  num_decoder_layers: 6
+  embed_dim: 512
+  ffn_dim: 2048
+  num_heads: 8
+  num_queries: 100
+  dropout: 0.1
+
+  

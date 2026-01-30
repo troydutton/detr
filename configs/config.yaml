@@ -1,0 +1,16 @@
+defaults:
+  - hydra: simple
+  - dataset: coco
+  - transforms: nano
+  - model: detr
+  - optimizer: adamw
+  - scheduler: step
+  - criterion: detr
+  - _self_
+
+train:
+  num_epochs: 300
+  save_period: 1
+  batch_size: 16
+  num_workers: 4
+  output_dir: /data/troy/models/detr/test
