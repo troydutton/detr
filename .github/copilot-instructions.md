@@ -1,5 +1,19 @@
 # DETR Project Instructions
 
+##  Project Overview
+This project implements the DETR (DEtection TRansformer) model for object detection. The codebase is structured to facilitate easy experimentation with different model architectures, training paradigms, and data processing pipelines.
+
+All source code is located in the `src/` directory. The main entry point for training is `train.py`, and the primary training and evaluation loop is located in `engine.py`.
+
+The primary modules are:
+ - `models/`: Contains model definitions (`detr.py`), backbone architectures (`backbone.py`), and transformer implementations (`transformer.py`, `encoder.py`, `decoder.py`, `positional_embedding.py`).
+ - `datasets/`: Data loading (`coco_dataset.py`) and transformation utilities (`transforms.py`).
+ - `criterion/`: Loss functions (`set_criterion.py`) and matching algorithms (`matcher.py`).
+ - `evaluators/`: Evaluation metrics (`coco_evaluator.py`).
+ - `utils/`: Utility functions for learning rate schedulers (`lr.py`), logging (`logger.py`), visualization (`visualize.py`), and miscellaneous helpers (`misc.py`).
+
+Both configuration files (`configs/`) and unit tests (`tests/`) are located outside the `src/` directory.
+
 ## Key Workflows & Commands
 ### Environment Management
 **ALWAYS** activate the conda environment before running any programs, tests, or python commands.
