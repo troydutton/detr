@@ -3,10 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Dict, List
 
 import torch
-import torch.nn.functional as F
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
-from torch import Tensor
 from torchvision.ops import box_convert
 
 from evaluators.evaluator import Evaluator

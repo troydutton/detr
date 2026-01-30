@@ -20,8 +20,8 @@ dependencies:
   - wandb
   - pytest
   - ipykernel
+  - ruff
   - black
-  - isort
   - pre-commit
   
   - pip:

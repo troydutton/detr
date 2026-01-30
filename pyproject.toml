@@ -13,3 +13,11 @@ dependencies = []
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["*"]
+
+[tool.ruff]
+src = ["src", "tests"]
+line-length = 140
+lint.select = ["F", "I"]
+
+[tool.black]
+line-length = 140
