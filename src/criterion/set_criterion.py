@@ -8,10 +8,10 @@ from torch import Tensor
 from torchvision.ops.boxes import box_convert, generalized_box_iou
 
 from criterion.criterion import Criterion
-from criterion.matcher import HungarianMatcher
+from criterion.hungarian_matcher import HungarianMatcher
 
 if TYPE_CHECKING:
-    from criterion.matcher import MatchIndices
+    from criterion.hungarian_matcher import MatchIndices
     from data import Target
     from models import Predictions
 

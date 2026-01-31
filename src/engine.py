@@ -4,6 +4,7 @@ from typing import Dict, Tuple
 import torch
 import wandb
 from torch import device
+from torch.nn.utils import clip_grad_norm_
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import DataLoader
@@ -27,6 +28,7 @@ def train(
     device: device,
     output_dir: Path,
     save_period: int = 1,
+    max_grad_norm: float = 0.1,
 ) -> None:
     """
     Train and evaluate a model for a number of epochs.
@@ -43,6 +45,7 @@ def train(
         device: Device to use.
         output_dir: Parent directory to save the weights to.
         save_period: Period (in epochs) to save the model weights.
+        max_grad_norm: Maximum gradient norm for clipping, optional.
     """
 
     # Ensure the output directory exists
@@ -58,6 +61,7 @@ def train(
             data=train_data,
             epoch=epoch,
             device=device,
+            max_grad_norm=max_grad_norm,
         )
 
         # Evaluate the model
@@ -86,6 +90,7 @@ def train_one_epoch(
     data: DataLoader,
     epoch: int,
     device: device,
+    max_grad_norm: float = 0.1,
 ) -> None:
     """
     Train a model for a single epoch.
@@ -98,6 +103,7 @@ def train_one_epoch(
         data: Training data.
         epoch: Current epoch.
         device: Device to train on.
+        max_grad_norm: Maximum gradient norm for clipping, optional.
     """
 
     # Set the model to training mode
@@ -116,6 +122,7 @@ def train_one_epoch(
         # Backward pass and optimization step
         losses = criterion(predictions, targets)
         losses["overall"].backward()
+        clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
         optimizer.step()
 
         # Step the learning rate scheduler every update
