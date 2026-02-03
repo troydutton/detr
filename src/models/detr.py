@@ -83,15 +83,17 @@ class DETR(Model):
         bias = -math.log((1 - (object_prob := 0.01)) / object_prob)
         self.class_head.bias.data = torch.ones(self.num_classes) * bias
 
-        if pretrained_weights is not None:
-            logging.info(f"Loading pretrained weights from '{pretrained_weights}'.")
+        if pretrained_weights is None:
+            return
 
-            state_dict = torch.load(pretrained_weights, map_location="cpu")
+        logging.info(f"Loading pretrained weights from '{pretrained_weights}'.")
 
-            incompatible = self.load_state_dict(state_dict, strict=False)
+        state_dict = torch.load(pretrained_weights, map_location="cpu")["model"]
 
-            if incompatible.missing_keys:
-                logging.warning(f"Missing keys when loading pretrained weights: {incompatible.missing_keys}")
+        incompatible = self.load_state_dict(state_dict, strict=False)
 
-            if incompatible.unexpected_keys:
-                logging.warning(f"Unexpected keys when loading pretrained weights: {incompatible.unexpected_keys}")
+        if incompatible.missing_keys:
+            logging.warning(f"Missing keys when loading pretrained weights: {incompatible.missing_keys}")
+
+        if incompatible.unexpected_keys:
+            logging.warning(f"Unexpected keys when loading pretrained weights: {incompatible.unexpected_keys}")

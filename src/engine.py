@@ -29,6 +29,7 @@ def train(
     output_dir: Union[str, Path],
     save_period: int = 1,
     max_grad_norm: float = 0.1,
+    start_epoch: int = 0,
 ) -> None:
     """
     Train and evaluate a model for a number of epochs.
@@ -46,14 +47,10 @@ def train(
         output_dir: Parent directory to save the weights to.
         save_period: Period (in epochs) to save the model weights.
         max_grad_norm: Maximum gradient norm for clipping, optional.
+        start_epoch: Epoch to start training from.
     """
 
-    # Ensure the output directory exists
-    output_dir = Path(output_dir)
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    for epoch in range(num_epochs):
+    for epoch in range(start_epoch, num_epochs):
         # Train for a single epoch
         train_one_epoch(
             model=model,
@@ -82,7 +79,13 @@ def train(
 
         # Save the model weights
         if (epoch + 1) % save_period == 0 or (epoch + 1) == num_epochs:
-            torch.save(model.state_dict(), output_dir / f"{epoch}.pt")
+            state = {
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict(),
+                "epoch": epoch,
+            }
+            torch.save(state, output_dir / f"{epoch}.pt")
 
 
 def train_one_epoch(

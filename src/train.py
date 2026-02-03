@@ -14,6 +14,7 @@ from data import CocoDataset, collate_fn
 from engine import train
 from evaluators import CocoEvaluator
 from models import Model
+from utils.checkpoint import load_checkpoint
 from utils.lr import prepare_scheduler_arguments
 from utils.optimizer import build_parameter_groups
 
@@ -27,8 +28,15 @@ def main(args: DictConfig) -> None:
     # Resolve arguments
     args: Args = OmegaConf.to_container(args, resolve=True, throw_on_missing=True)
 
+    # Save the arguments to the output directory
+    output_dir = Path(args["train"]["output_dir"])
+    output_dir.mkdir(parents=True, exist_ok=True)
+    OmegaConf.save(config=args, f=output_dir / "config.yaml")
+
+    # Now that we've saved the arguments, we can modify them
+    del args["train"]["output_dir"]
+
     # Initialize Weights & Biases
-    output_dir = Path(args["train"].pop("output_dir"))
     wandb.init(project="detr", name=output_dir.name, config=args)
 
     # Create datasets (config/dataset/*.yaml)
@@ -59,6 +67,15 @@ def main(args: DictConfig) -> None:
     # Create evaluator
     evaluator: CocoEvaluator = CocoEvaluator(coco_targets=val_dataset.coco)
 
+    # Load from checkpoint if provided
+    start_epoch = load_checkpoint(
+        checkpoint=args["train"].pop("checkpoint", None),
+        model=model,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        device=device,
+    )
+
     # Start training
     train(
         model=model,
@@ -70,6 +87,7 @@ def main(args: DictConfig) -> None:
         val_data=val_data,
         device=device,
         output_dir=output_dir,
+        start_epoch=start_epoch,
         **args["train"],
     )
 
