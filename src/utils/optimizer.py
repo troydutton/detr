@@ -32,8 +32,8 @@ def get_parameter_groups(model: Model, lr: float, lr_backbone: float) -> Dict[st
 
     # Create parameter groups
     param_groups = [
-        {"params": params, "lr": lr},
-        {"params": backbone_params, "lr": lr_backbone},
+        {"name": "default", "params": params, "lr": lr},
+        {"name": "backbone", "params": backbone_params, "lr": lr_backbone},
     ]
 
     return param_groups

@@ -46,6 +46,8 @@ class CocoDataset(Dataset):
         self.category_id_to_label = {cat_id: i for i, cat_id in enumerate(category_ids)}
         self.num_classes = len(self.category_id_to_label)
 
+        logging.info(f"Loaded {len(self.image_ids)} images with {self.num_classes} classes.")
+
     def __len__(self):
         return len(self.image_ids)
 

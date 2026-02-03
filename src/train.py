@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any, Dict, Union
 
 import hydra
 import wandb
@@ -17,14 +18,16 @@ from utils.optimizer import get_parameter_groups
 
 device = "cuda:0"
 
+Args = Dict[str, Union[Any, "Args"]]
+
 
 @hydra.main(config_path="../configs", config_name="config", version_base=None)
 def main(args: DictConfig) -> None:
     # Resolve arguments
-    args = OmegaConf.to_container(args, resolve=True, throw_on_missing=True)
+    args: Args = OmegaConf.to_container(args, resolve=True, throw_on_missing=True)
 
     # Initialize Weights & Biases
-    output_dir = Path(args["train"]["output_dir"])
+    output_dir = Path(args["train"].pop("output_dir"))
     wandb.init(project="detr", name=output_dir.name, config=args)
 
     # Create datasets (config/dataset/*.yaml)
@@ -32,7 +35,7 @@ def main(args: DictConfig) -> None:
     val_dataset: CocoDataset = instantiate(args["dataset"]["val"])
 
     # Create dataloaders
-    batch_size, num_workers = args["train"]["batch_size"], args["train"]["num_workers"]
+    batch_size, num_workers = args["train"].pop("batch_size"), args["train"].pop("num_workers")
     train_data = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, collate_fn=collate_fn)
     val_data = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, collate_fn=collate_fn)
 
@@ -40,11 +43,12 @@ def main(args: DictConfig) -> None:
     model: Model = instantiate(args["model"], num_classes=train_dataset.num_classes).to(device)
 
     # Create optimizer (config/optimizer/*.yaml)
-    lr, lr_backbone = args["optimizer"].pop("lr"), args["optimizer"].pop("lr_backbone")
+    lr, lr_backbone = args["optimizer"]["lr"], args["optimizer"].pop("lr_backbone")
     args["optimizer"]["params"] = get_parameter_groups(model, lr=lr, lr_backbone=lr_backbone)
     optimizer: Optimizer = instantiate(args["optimizer"], _convert_="all")
 
     # Create learning rate scheduler (config/scheduler/*.yaml)
+    args["scheduler"]["step_size"] *= len(train_data)
     scheduler: _LRScheduler = instantiate(args["scheduler"], optimizer=optimizer)
 
     # Create criterion (config/criterion/*.yaml)
@@ -55,7 +59,6 @@ def main(args: DictConfig) -> None:
     evaluator: CocoEvaluator = CocoEvaluator(coco_targets=val_dataset.coco)
 
     # Start training
-    num_epochs, save_period = args["train"]["num_epochs"], args["train"]["save_period"]
     train(
         model=model,
         optimizer=optimizer,
@@ -64,10 +67,9 @@ def main(args: DictConfig) -> None:
         evaluator=evaluator,
         train_data=train_data,
         val_data=val_data,
-        num_epochs=num_epochs,
-        output_dir=output_dir,
         device=device,
-        save_period=save_period,
+        output_dir=output_dir,
+        **args["train"],
     )
 
 

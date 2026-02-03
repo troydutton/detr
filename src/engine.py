@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Union
 
 import torch
 import wandb
@@ -26,7 +26,7 @@ def train(
     val_data: DataLoader,
     num_epochs: int,
     device: device,
-    output_dir: Path,
+    output_dir: Union[str, Path],
     save_period: int = 1,
     max_grad_norm: float = 0.1,
 ) -> None:
@@ -49,6 +49,8 @@ def train(
     """
 
     # Ensure the output directory exists
+    output_dir = Path(output_dir)
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for epoch in range(num_epochs):
@@ -74,8 +76,9 @@ def train(
             device=device,
         )
 
-        # Log the validation losses
-        wandb.log({"val": {"loss": val_losses, "metric": val_metrics}}, step=wandb.run.step)
+        # Log the validation losses and learning rates for this epoch
+        learning_rates = {group.get("name", i): group["lr"] for i, group in enumerate(scheduler.optimizer.param_groups)}
+        wandb.log({"val": {"loss": val_losses, "metric": val_metrics}, "lr": learning_rates}, step=wandb.run.step)
 
         # Save the model weights
         if (epoch + 1) % save_period == 0 or (epoch + 1) == num_epochs:
