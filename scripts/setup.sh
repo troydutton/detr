@@ -12,6 +12,7 @@ conda env create -f environment.yaml
 CONDA_PATH=$(conda info --base)
 source "$CONDA_PATH/etc/profile.d/conda.sh"
 conda activate "$ENV_NAME"
+conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib
 
 # Package installation
 pip install --editable .
