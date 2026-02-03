@@ -1,4 +1,3 @@
-import logging
 from typing import Any, Dict, Union
 
 import hydra
@@ -54,9 +53,18 @@ def main(args: DictConfig) -> None:
         device=device,
     )
 
-    logging.info(f"Evaluation Results for '{checkpoint}' on '{args['dataset']['val']['dataset_root']}':")
-    logging.info("Losses: " + ", ".join([f"{k}={v:,}" for k, v in losses.items()]) + ".")
-    logging.info("Metrics: " + ", ".join([f"{k}={v:,}" for k, v in metrics.items()]) + ".")
+    # Log results
+    header = " Evaluation Results "
+    width = max(len(header), 80)
+
+    print(f"\n{header:=^{width}}")
+    print(f"Checkpoint: {checkpoint}")
+    print(f"Dataset: {val_dataset.root / val_dataset.split}")
+    print(f"{' Losses ':-^{width}}")
+    print(", ".join([f"{k}: {v:.2f}" for k, v in losses.items()]))
+    print(f"{' Metrics ':-^{width}}")
+    print(", ".join([f"{k}: {v:.2f}" for k, v in metrics.items()]))
+    print("=" * width)
 
 
 if __name__ == "__main__":

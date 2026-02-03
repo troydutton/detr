@@ -85,7 +85,7 @@ def train(
                 "scheduler": scheduler.state_dict(),
                 "epoch": epoch,
             }
-            torch.save(state, output_dir / f"{epoch}.pt")
+            torch.save(state, output_dir / f"{epoch + 1}.pt")
 
 
 def train_one_epoch(

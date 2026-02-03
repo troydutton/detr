@@ -33,7 +33,11 @@ def build_parameter_groups(model: Model, lr: float, lr_backbone: float) -> Dict[
             params.append(param)
             num_params += param.numel()
 
-    logging.info(f"Number of trainable parameters: {num_params / 1e6:.1f}M (default), {num_backbone_params / 1e6:.1f}M (backbone).")
+    # Report number of parameters in millions
+    num_params, num_backbone_params = num_params / 1e6, num_backbone_params / 1e6
+    logging.info(
+        f"Number of parameters is {num_params + num_backbone_params:.1f}M (default: {num_params:.1f}M, backbone: {num_backbone_params:.1f}M)."
+    )
 
     # Create parameter groups
     param_groups = [
