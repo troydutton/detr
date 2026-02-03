@@ -7,6 +7,7 @@ dependencies:
   - python=3.12
   - pip
   - numpy<2
+  - libstdcxx-ng
   - scipy
   - scipy-stubs
   - scikit-learn
