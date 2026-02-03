@@ -122,7 +122,7 @@ class TransformerEncoderLayer(nn.Module):
             features: Features with the same shape as the input.
         """
 
-        assert features.ndim == 3, f"Expected features of shape (batch_size, num_features, embed_dim), got {features.shape = }"
+        assert features.ndim == 3, f"Expected features of shape (batch_size, num_features, embed_dim), got {features.shape=}"
 
         # Self-attention
         v = self.norm1(features)

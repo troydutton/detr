@@ -29,11 +29,11 @@ class CocoDataset(Dataset):
     """
 
     def __init__(self, dataset_root: Union[str, Path], split: str, transforms: Transformation = None) -> None:
-        logging.info(f"Loading '{split}' split from '{dataset_root}'.")
-
         self.root = Path(dataset_root)
         self.split = split
         self.transforms = transforms
+
+        logging.info(f"Loading '{self.root / self.split}'.")
 
         # Initialize COCO API (silencing stdout to avoid clutter)
         with silence_stdout():
@@ -46,7 +46,7 @@ class CocoDataset(Dataset):
         self.category_id_to_label = {cat_id: i for i, cat_id in enumerate(category_ids)}
         self.num_classes = len(self.category_id_to_label)
 
-        logging.info(f"Loaded {len(self.image_ids)} images with {self.num_classes} classes.")
+        logging.info(f"Loaded {len(self.image_ids)} images with {self.num_classes} classes from '{self.root / self.split}'.")
 
     def __len__(self):
         return len(self.image_ids)
@@ -160,7 +160,7 @@ class CocoDataset(Dataset):
             class_weights: Weights for each class with shape (num_classes)
         """
 
-        logging.info(f"Calculating class weights with {beta = }.")
+        logging.info(f"Calculating class weights with {beta=}.")
 
         # Count the number of occurences of each class
         frequencies = torch.zeros(self.num_classes)

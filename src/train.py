@@ -14,7 +14,8 @@ from data import CocoDataset, collate_fn
 from engine import train
 from evaluators import CocoEvaluator
 from models import Model
-from utils.optimizer import get_parameter_groups
+from utils.lr import prepare_scheduler_arguments
+from utils.optimizer import build_parameter_groups
 
 device = "cuda:0"
 
@@ -44,11 +45,11 @@ def main(args: DictConfig) -> None:
 
     # Create optimizer (config/optimizer/*.yaml)
     lr, lr_backbone = args["optimizer"]["lr"], args["optimizer"].pop("lr_backbone")
-    args["optimizer"]["params"] = get_parameter_groups(model, lr=lr, lr_backbone=lr_backbone)
+    args["optimizer"]["params"] = build_parameter_groups(model, lr=lr, lr_backbone=lr_backbone)
     optimizer: Optimizer = instantiate(args["optimizer"], _convert_="all")
 
     # Create learning rate scheduler (config/scheduler/*.yaml)
-    args["scheduler"]["step_size"] *= len(train_data)
+    args["scheduler"] = prepare_scheduler_arguments(args["scheduler"], steps_per_epoch=len(train_data))
     scheduler: _LRScheduler = instantiate(args["scheduler"], optimizer=optimizer)
 
     # Create criterion (config/criterion/*.yaml)

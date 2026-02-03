@@ -58,7 +58,7 @@ class Transformer(nn.Module):
             queries: Object queries with shape (batch_size, num_queries, embed_dim).
         """
 
-        assert features.ndim == 4, f"Expected features of shape (batch_size, height, width, embed_dim), got {features.shape = }"
+        assert features.ndim == 4, f"Expected features of shape (batch_size, height, width, embed_dim), got {features.shape=}"
 
         # Collapse the spatial dimensions
         batch_size, height, width, embed_dim = features.shape

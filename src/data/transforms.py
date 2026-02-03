@@ -138,7 +138,7 @@ def make_transformations(
         transformations: A callable that accepts an (image, annotations) pair, and returns the transformed pair.
     """
 
-    logging.info(f"Building '{split}' transformations with {resolution = }.")
+    logging.info(f"Building '{split}' transformations with {resolution=}.")
 
     if square_resize:
         resize_transform = T.Resize(size=(resolution, resolution))

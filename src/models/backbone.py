@@ -6,7 +6,7 @@ import torch.nn as nn
 from timm.models import FeatureInfo
 from torch import Tensor
 
-from models.positional_embedding import generate_positional_embedding_sine
+from models.positional_embedding import build_positional_embedding
 
 logger = logging.getLogger("detr")
 
@@ -58,8 +58,8 @@ class Backbone(nn.Module):
         # Move channels to the end
         features = features.permute(0, 2, 3, 1)  # (batch_size, feature_height, feature_width, embed_dim)
 
-        # Generate positional embeddings
-        feature_pos = generate_positional_embedding_sine(features)
+        # Build positional embeddings
+        feature_pos = build_positional_embedding(features)
 
         return features, feature_pos
 

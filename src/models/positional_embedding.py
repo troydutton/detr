@@ -4,7 +4,7 @@ import torch
 from torch import Tensor
 
 
-def generate_positional_embedding_sine(input_tensor: Tensor, temperature: float = 10000.0) -> Tensor:
+def build_positional_embedding(input_tensor: Tensor, temperature: float = 10000.0) -> Tensor:
     """
     Generates 2D sinusoidal positional embeddings for a given input tensor.
 
@@ -18,7 +18,7 @@ def generate_positional_embedding_sine(input_tensor: Tensor, temperature: float 
     batch_size, height, width, total_channels = input_tensor.shape
 
     if total_channels % 4 != 0:
-        raise ValueError(f"Total channels must be divisible by 4, got {total_channels = }.")
+        raise ValueError(f"Total channels must be divisible by 4, got {total_channels=}.")
 
     # We use half the total channels for Height and half for Width
     dim_per_axis = total_channels // 2

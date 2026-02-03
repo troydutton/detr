@@ -4,7 +4,7 @@ from typing import Any, Dict
 from models import Model
 
 
-def get_parameter_groups(model: Model, lr: float, lr_backbone: float) -> Dict[str, Any]:
+def build_parameter_groups(model: Model, lr: float, lr_backbone: float) -> Dict[str, Any]:
     """
     Build parameter groups for the optimizer with a separate learning rate for the backbone.
 
@@ -17,7 +17,7 @@ def get_parameter_groups(model: Model, lr: float, lr_backbone: float) -> Dict[st
         param_groups: Parameter groups for the optimizer.
     """
 
-    logging.info(f"Building parameter groups with {lr = } and {lr_backbone = }")
+    logging.info(f"Building parameter groups with {lr=} and {lr_backbone=}")
 
     # Separate out backbone parameters
     params, backbone_params = [], []
