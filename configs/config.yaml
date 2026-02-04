@@ -15,4 +15,5 @@ train:
   num_workers: 8
   save_period: 5
   max_grad_norm: 0.1
+  amp: False
   checkpoint: Null

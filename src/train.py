@@ -5,6 +5,7 @@ import hydra
 import wandb
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
+from torch.amp import GradScaler
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
@@ -56,6 +57,9 @@ def main(args: DictConfig) -> None:
     args["optimizer"]["params"] = build_parameter_groups(model, lr=lr, lr_backbone=lr_backbone)
     optimizer: Optimizer = instantiate(args["optimizer"], _convert_="all")
 
+    # Create gradient scaler for AMP
+    scaler = GradScaler(enabled=args["train"].get("amp", False))
+
     # Create learning rate scheduler (config/scheduler/*.yaml)
     args["scheduler"] = prepare_scheduler_arguments(args["scheduler"], steps_per_epoch=len(train_data))
     scheduler: _LRScheduler = instantiate(args["scheduler"], optimizer=optimizer)
@@ -71,6 +75,7 @@ def main(args: DictConfig) -> None:
     start_epoch = load_checkpoint(
         checkpoint=args["train"].pop("checkpoint", None),
         model=model,
+        scaler=scaler,
         optimizer=optimizer,
         scheduler=scheduler,
         device=device,
@@ -80,6 +85,7 @@ def main(args: DictConfig) -> None:
     train(
         model=model,
         optimizer=optimizer,
+        scaler=scaler,
         scheduler=scheduler,
         criterion=criterion,
         evaluator=evaluator,

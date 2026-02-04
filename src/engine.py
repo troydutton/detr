@@ -4,6 +4,7 @@ from typing import Dict, Tuple, Union
 import torch
 import wandb
 from torch import device
+from torch.amp import GradScaler
 from torch.nn.utils import clip_grad_norm_
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
@@ -19,6 +20,7 @@ from utils.misc import send_to_device
 def train(
     model: Model,
     optimizer: Optimizer,
+    scaler: GradScaler,
     scheduler: _LRScheduler,
     criterion: Criterion,
     evaluator: Evaluator,
@@ -27,9 +29,10 @@ def train(
     num_epochs: int,
     device: device,
     output_dir: Union[str, Path],
+    start_epoch: int = 0,
     save_period: int = 1,
     max_grad_norm: float = 0.1,
-    start_epoch: int = 0,
+    amp: bool = False,
 ) -> None:
     """
     Train and evaluate a model for a number of epochs.
@@ -37,6 +40,7 @@ def train(
     Args:
         model: Model to train.
         optimizer: Optimizer.
+        scaler: Gradient scaler for AMP.
         scheduler: Learning rate scheduler.
         criterion: Loss function.
         evaluator: Evaluator to compute metrics.
@@ -45,9 +49,10 @@ def train(
         num_epochs: Number of epochs to train for.
         device: Device to use.
         output_dir: Parent directory to save the weights to.
-        save_period: Period (in epochs) to save the model weights.
+        start_epoch: Epoch to start training from, optional.
+        save_period: Period (in epochs) to save the model weights, optional.
         max_grad_norm: Maximum gradient norm for clipping, optional.
-        start_epoch: Epoch to start training from.
+        amp: Whether to use AMP, optional.
     """
 
     for epoch in range(start_epoch, num_epochs):
@@ -55,12 +60,14 @@ def train(
         train_one_epoch(
             model=model,
             optimizer=optimizer,
+            scaler=scaler,
             criterion=criterion,
             scheduler=scheduler,
             data=train_data,
             epoch=epoch,
             device=device,
             max_grad_norm=max_grad_norm,
+            amp=amp,
         )
 
         # Evaluate the model
@@ -71,6 +78,7 @@ def train(
             data=val_data,
             epoch=epoch,
             device=device,
+            amp=amp,
         )
 
         # Log the validation losses and learning rates for this epoch
@@ -82,6 +90,7 @@ def train(
             state = {
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
+                "scaler": scaler.state_dict(),
                 "scheduler": scheduler.state_dict(),
                 "epoch": epoch,
             }
@@ -91,12 +100,15 @@ def train(
 def train_one_epoch(
     model: Model,
     optimizer: Optimizer,
+    scaler: GradScaler,
     criterion: Criterion,
     scheduler: _LRScheduler,
     data: DataLoader,
     epoch: int,
     device: device,
+    *,
     max_grad_norm: float = 0.1,
+    amp: bool = False,
 ) -> None:
     """
     Train a model for a single epoch.
@@ -104,12 +116,14 @@ def train_one_epoch(
     Args:
         model: Model to train.
         optimizer: Optimizer.
+        scaler: Gradient scaler for AMP.
         criterion: Loss function.
         scheduler: Learning rate scheduler.
         data: Training data.
         epoch: Current epoch.
         device: Device to train on.
         max_grad_norm: Maximum gradient norm for clipping, optional.
+        amp: Whether to use AMP, optional.
     """
 
     # Set the model to training mode
@@ -123,13 +137,20 @@ def train_one_epoch(
         images, targets = send_to_device(images, device), send_to_device(targets, device)
 
         # Forward pass
-        predictions = model(images)
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=amp):
+            predictions = model(images)
+            losses = criterion(predictions, targets)
 
-        # Backward pass and optimization step
-        losses = criterion(predictions, targets)
-        losses["overall"].backward()
+        # Backward pass
+        scaler.scale(losses["overall"]).backward()
+
+        # Unscale for gradient clipping
+        scaler.unscale_(optimizer)
         clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
-        optimizer.step()
+
+        # Optimizer step
+        scaler.step(optimizer)
+        scaler.update()
 
         # Step the learning rate scheduler every update
         scheduler.step()
@@ -146,6 +167,7 @@ def evaluate(
     data: DataLoader,
     epoch: int,
     device: device,
+    amp: bool = False,
 ) -> Tuple[Dict[str, float], Dict[str, float]]:
     """
     Evaluate a model.
@@ -157,6 +179,7 @@ def evaluate(
         data: Validation data.
         epoch: Current epoch.
         device: Device to evaluate on.
+        amp: Whether to use AMP, optional.
 
     Returns:
         losses: Dictionary of average losses.
@@ -176,10 +199,11 @@ def evaluate(
         images, targets = send_to_device(images, device), send_to_device(targets, device)
 
         # Forward pass
-        predictions = model(images)
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=amp):
+            predictions = model(images)
+            batch_losses = criterion(predictions, targets)
 
-        # Compute the loss & update the running loss
-        batch_losses = criterion(predictions, targets)
+        # Update the running loss
         losses = {k: losses.get(k, 0) + v.item() for k, v in batch_losses.items()}
 
         # Update the evaluator
