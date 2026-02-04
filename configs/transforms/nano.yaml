@@ -1,14 +1,14 @@
 train:
   _target_: data.transforms.make_transformations
   split: train
-  resolution: 384
+  resolution: 480
 
 val:
   _target_: data.transforms.make_transformations
   split: val 
-  resolution: 384
+  resolution: 480
 
 test:
   _target_: data.transforms.make_transformations
   split: test
-  resolution: 384
+  resolution: 480
