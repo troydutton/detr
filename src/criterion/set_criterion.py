@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
+from accelerate import Accelerator
 from torch import Tensor
 from torchvision.ops.boxes import box_convert, generalized_box_iou
 
@@ -40,7 +41,7 @@ class SetCriterion(Criterion):
 
         self.matcher = HungarianMatcher(cost_weights=loss_weights, alpha=alpha, gamma=gamma)
 
-    def __call__(self, predictions: Predictions, targets: List[Target]) -> Dict[str, Tensor]:
+    def __call__(self, predictions: Predictions, targets: List[Target], accelerator: Optional[Accelerator] = None) -> Dict[str, Tensor]:
         """
         Calculates losses for the given predictions and targets.
 
@@ -51,6 +52,7 @@ class SetCriterion(Criterion):
             targets: List of targets for each image, with keys
                 - `labels`: Target class labels of shape (num_targets,).
                 - `boxes`: Target bounding boxes of shape (num_targets, 4).
+            accelerator: Distributed accelerator, optional.
 
         Returns:
             losses: Dictionary of calculated losses.
@@ -60,8 +62,14 @@ class SetCriterion(Criterion):
         box_loss, giou_loss = self._calculate_box_losses(predictions, targets, matched_indices)
         class_loss = self._calculate_class_loss(predictions, targets, matched_indices)
 
+        # Normalize losses by the number of target boxes (across all devices if distributed)
+        num_targets = sum(len(t["boxes"]) for t in targets)
+
+        if accelerator is not None:
+            num_targets = accelerator.gather(torch.tensor(num_targets, device=accelerator.device)).sum().item()
+
         # Weighted sum
-        losses = {"box": box_loss, "giou": giou_loss, "class": class_loss}
+        losses = {"box": box_loss / num_targets, "giou": giou_loss / num_targets, "class": class_loss / num_targets}
         losses["overall"] = sum(v * self.loss_weights.get(k, 1) for k, v in losses.items())
 
         return losses
@@ -85,9 +93,9 @@ class SetCriterion(Criterion):
             matched_indices: Matched prediction and target indices for each image in the batch.
 
         Returns:
-            box_loss: L1 loss between matched boxes.
+            box_loss: L1 loss between matched boxes (summed).
             #### giou_loss
-            GIoU loss between matched boxes.
+            GIoU loss between matched boxes (summed).
         """
 
         # Select the matched predictions and targets
@@ -97,18 +105,15 @@ class SetCriterion(Criterion):
 
         prediction_boxes = predictions["boxes"][prediction_indices]
         target_boxes = torch.cat([t["boxes"][indices] for t, (_, indices) in zip(targets, matched_indices)])
-        num_targets = target_boxes.shape[0]
 
         # Minimize L1 Distance
         box_loss = F.l1_loss(prediction_boxes, target_boxes, reduction="sum")
-        box_loss = box_loss / num_targets
 
         prediction_boxes = box_convert(prediction_boxes, "cxcywh", "xyxy")
         target_boxes = box_convert(target_boxes, "cxcywh", "xyxy")
 
         # Maximize GIoU
         giou_loss = (1 - generalized_box_iou(prediction_boxes, target_boxes).diag()).sum()
-        giou_loss = giou_loss / num_targets
 
         return box_loss, giou_loss
 
@@ -126,7 +131,7 @@ class SetCriterion(Criterion):
             matched_indices: Matched prediction and target indices for each image in the batch.
 
         Returns:
-            class_loss: Classification loss.
+            class_loss: Classification loss (summed).
         """
 
         # Select the matched predictions and targets
@@ -136,7 +141,6 @@ class SetCriterion(Criterion):
         prediction_logits = predictions["logits"]  # (batch_size, num_queries, num_classes)
 
         target_labels = torch.cat([t["labels"][i] for t, (_, i) in zip(targets, matched_indices)])  # (num_targets)
-        num_targets = target_labels.shape[0]
 
         # We use binary focal loss for classification
         prediction_probs = prediction_logits.sigmoid()
@@ -151,7 +155,6 @@ class SetCriterion(Criterion):
         # Numerically stable version of (1 - α) * prob ** γ * -(1 - prob).log()
         neg_class_cost = (1 - self.alpha) * (prediction_probs**self.gamma) * (-F.logsigmoid(-prediction_logits))
 
-        class_loss = pos_class_cost * one_hot_target_labels + neg_class_cost * (1 - one_hot_target_labels)
-        class_loss = class_loss.sum() / num_targets
+        class_loss = (pos_class_cost * one_hot_target_labels + neg_class_cost * (1 - one_hot_target_labels)).sum()
 
         return class_loss

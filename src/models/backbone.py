@@ -2,6 +2,7 @@ import logging
 from typing import List, Protocol, Tuple
 
 import timm
+import torch
 import torch.nn as nn
 from timm.models import FeatureInfo
 from torch import Tensor
@@ -38,15 +39,19 @@ class Backbone(nn.Module):
 
         self.projection: ProjectionType = nn.Conv2d(in_channels, embed_dim, kernel_size=1)
 
+        # Optimize memory format to align with DDP bucket views
+        self.backbone.to(memory_format=torch.channels_last)
+        self.projection.to(memory_format=torch.channels_last)
+
     def forward(self, images: Tensor) -> Tuple[Tensor, Tensor]:
         """
         Args:
             images: Image with shape (batch_size, 3, height, width).
 
         Returns:
-            features: Features with shape (batch_size, feature_height, feature_width, embed_dim).
+            features: Features with shape (batch_size, embed_dim, feature_height, feature_width).
             #### feature_pos
-            Positional embeddings with shape (batch_size, feature_height, feature_width, embed_dim).
+            Positional embeddings with shape (batch_size, embed_dim, feature_height, feature_width).
         """
 
         # Extract features
@@ -54,9 +59,6 @@ class Backbone(nn.Module):
 
         # Project to the desired embedding dimension
         features = self.projection(features)  # (batch_size, embed_dim, feature_height, feature_width)
-
-        # Move channels to the end
-        features = features.permute(0, 2, 3, 1)  # (batch_size, feature_height, feature_width, embed_dim)
 
         # Build positional embeddings
         feature_pos = build_positional_embedding(features)
@@ -67,6 +69,7 @@ class Backbone(nn.Module):
 class BackboneType(Protocol):
     feature_info: FeatureInfo
 
+    def to(self, *args, **kwargs) -> "BackboneType": ...
     def __call__(self, Images: Tensor) -> List[Tensor]: ...
 
 

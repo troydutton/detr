@@ -16,6 +16,7 @@ dependencies:
   - matplotlib
   - pycocotools
   - accelerate
+  - nvidia-ml-py
   - transformers
   - timm
   - wandb

@@ -9,13 +9,13 @@ def build_positional_embedding(input_tensor: Tensor, temperature: float = 10000.
     Generates 2D sinusoidal positional embeddings for a given input tensor.
 
     Args:
-        input_tensor: Input wth shape (batch_size, height, width, channels).
+        input_tensor: Input wth shape (batch_size, channels, height, width).
         temperature: Base for the frequency exponential scale.
 
     Returns:
-        pos_embeddings: Positional embeddings with shape (batch_size, height, width, channels).
+        pos_embeddings: Positional embeddings with shape (batch_size, channels, height, width).
     """
-    batch_size, height, width, total_channels = input_tensor.shape
+    batch_size, total_channels, height, width = input_tensor.shape
 
     if total_channels % 4 != 0:
         raise ValueError(f"Total channels must be divisible by 4, got {total_channels=}.")
@@ -46,8 +46,8 @@ def build_positional_embedding(input_tensor: Tensor, temperature: float = 10000.
     x_emb[:, 0::2] = torch.sin(x_sin_input)
     x_emb[:, 1::2] = torch.cos(x_sin_input)
 
-    # Expand and concatenate to create (height, width, total_channels)
-    pos_embeddings = torch.cat([y_emb.unsqueeze(1).repeat(1, width, 1), x_emb.unsqueeze(0).repeat(height, 1, 1)], dim=-1)
+    # Expand and concatenate to create (channels, height, width)
+    pos_embeddings = torch.cat([y_emb.unsqueeze(1).repeat(1, width, 1), x_emb.unsqueeze(0).repeat(height, 1, 1)], dim=-1).permute(2, 0, 1)
 
     # Repeat across the batch dimension
     pos_embeddings = pos_embeddings.unsqueeze(0).expand(batch_size, -1, -1, -1)

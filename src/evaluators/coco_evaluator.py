@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import torch
+from accelerate import Accelerator
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 from torchvision.ops import box_convert
@@ -35,7 +36,7 @@ class CocoEvaluator(Evaluator):
         """Reset the internal state of the evaluator."""
         self.predictions.clear()
 
-    def update(self, predictions: Predictions, targets: List[Target]) -> None:
+    def update(self, predictions: Predictions, targets: List[Target], accelerator: Optional[Accelerator] = None) -> None:
         """
         Update the evaluator with a batch of predictions and targets.
 
@@ -46,26 +47,42 @@ class CocoEvaluator(Evaluator):
             targets: List of targets, where each target contains
                 - `image_id`: Image ID.
                 - `orig_size`: Original image size [height, width].
+            accelerator: Distributed accelerator, optional.
         """
 
-        # Convert boxes from cxcywh to xywh
-        prediction_boxes = predictions["boxes"]
-        boxes = box_convert(prediction_boxes, in_fmt="cxcywh", out_fmt="xywh")
+        # Get prediction boxes, scores, and labels
+        boxes = predictions["boxes"]
+        logits = predictions["logits"]
+        scores, labels = logits.sigmoid().max(dim=-1)
 
-        # Get prediction scores and labels
-        prediction_logits = predictions["logits"]
-        scores, labels = prediction_logits.sigmoid().max(dim=-1)
-
-        # Each target corresponds to an image in the batch
+        # Extract image ids and scales
+        image_scales = torch.empty(((batch_size := len(targets)), 4), dtype=boxes.dtype, device=(device := boxes.device))
+        image_ids = torch.empty((batch_size,), dtype=torch.int, device=device)
         for i, target in enumerate(targets):
-            image_id = target["image_id"].item()
+            image_ids[i] = target["image_id"].item()
+
             height, width = target["orig_size"].tolist()
+            image_scales[i] = torch.tensor([width, height, width, height], dtype=boxes.dtype, device=device)
 
-            # Scale boxes to original image size
-            image_boxes = (boxes[i] * torch.tensor([width, height, width, height], device=boxes.device)).tolist()
-            image_scores = scores[i].tolist()
-            image_labels = labels[i].tolist()
+        # Convert boxes from normalized cxcywh to unnormalized xywh expected by COCO API
+        boxes = box_convert(boxes, in_fmt="cxcywh", out_fmt="xywh")
+        boxes = boxes * image_scales[:, None, :]
 
+        if accelerator is not None:
+            image_ids = accelerator.gather_for_metrics(image_ids)
+            boxes = accelerator.gather_for_metrics(boxes)
+            scores = accelerator.gather_for_metrics(scores)
+            labels = accelerator.gather_for_metrics(labels)
+
+            if not accelerator.is_main_process:
+                return
+
+        image_ids = image_ids.tolist()
+        boxes = boxes.tolist()
+        scores = scores.tolist()
+        labels = labels.tolist()
+
+        for image_id, image_boxes, image_scores, image_labels in zip(image_ids, boxes, scores, labels):
             for box, score, label in zip(image_boxes, image_scores, image_labels):
                 self.predictions.append(
                     {
