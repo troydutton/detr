@@ -51,6 +51,7 @@ def main(args: DictConfig) -> None:
         data=val_data,
         epoch=0,
         device=device,
+        amp=args["train"]["amp"],
     )
 
     # Log results
