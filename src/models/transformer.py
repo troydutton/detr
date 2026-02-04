@@ -51,19 +51,18 @@ class Transformer(nn.Module):
     def forward(self, features: Tensor, feature_pos: Tensor = None) -> Tensor:
         """
         Args:
-            features: Features with shape (batch_size, height, width, embed_dim).
-            feature_pos: Feature positional embeddings with shape (batch_size, height, width, embed_dim).
+            features: Features with shape (batch_size, embed_dim, height, width).
+            feature_pos: Feature positional embeddings with shape (batch_size, embed_dim, height, width).
 
         Returns:
             queries: Object queries with shape (batch_size, num_queries, embed_dim).
         """
 
-        assert features.ndim == 4, f"Expected features of shape (batch_size, height, width, embed_dim), got {features.shape=}"
+        assert features.ndim == 4, f"Expected features of shape (batch_size, embed_dim, height, width), got {features.shape=}"
 
-        # Collapse the spatial dimensions
-        batch_size, height, width, embed_dim = features.shape
-        features = features.view(batch_size, height * width, embed_dim)
-        feature_pos = None if feature_pos is None else feature_pos.view(batch_size, height * width, embed_dim)
+        # Collapse the spatial dimensions (batch_size, height * width, embed_dim)
+        features = features.flatten(2).transpose(1, 2)
+        feature_pos = None if feature_pos is None else feature_pos.flatten(2).transpose(1, 2)
 
         # Encode the features
         features = self.encoder(features, feature_pos)
