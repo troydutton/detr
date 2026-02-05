@@ -62,11 +62,11 @@ class SetCriterion(Criterion):
         box_loss, giou_loss = self._calculate_box_losses(predictions, targets, matched_indices)
         class_loss = self._calculate_class_loss(predictions, targets, matched_indices)
 
-        # Normalize losses by the number of target boxes (across all devices if distributed)
+        # Normalize losses by the number of target boxes (averaged across all devices if distributed)
         num_targets = sum(len(t["boxes"]) for t in targets)
 
         if accelerator is not None:
-            num_targets = accelerator.gather(torch.tensor(num_targets, device=accelerator.device)).sum().item()
+            num_targets = accelerator.reduce(torch.tensor(num_targets, dtype=torch.float, device=accelerator.device), reduction="mean")
 
         # Weighted sum
         losses = {"box": box_loss / num_targets, "giou": giou_loss / num_targets, "class": class_loss / num_targets}
