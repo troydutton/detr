@@ -5,8 +5,17 @@
             "name": "Debug DETR",
             "type": "debugpy",
             "request": "launch",
-            "program": "src/train.py",
+            "module": "accelerate.commands.launch",
+            "args": [
+                "--num_processes=1",
+                "src/train.py"
+            ],
             "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+            "justMyCode": false
         }
     ]
 }

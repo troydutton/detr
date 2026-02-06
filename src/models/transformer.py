@@ -17,6 +17,7 @@ class Transformer(nn.Module):
         num_heads: Number of attention heads.
         num_queries: Number of object queries.
         dropout: Dropout rate, optional.
+        return_intermediates: Whether to return intermediate transformer outputs, optional.
     """
 
     def __init__(
@@ -28,6 +29,8 @@ class Transformer(nn.Module):
         num_heads: int,
         num_queries: int,
         dropout: float = 0.0,
+        *,
+        return_intermediates: bool = True,
     ) -> None:
         super().__init__()
 
@@ -46,6 +49,7 @@ class Transformer(nn.Module):
             num_heads=num_heads,
             num_queries=num_queries,
             dropout=dropout,
+            return_intermediates=return_intermediates,
         )
 
     def forward(self, features: Tensor, feature_pos: Tensor = None) -> Tensor:

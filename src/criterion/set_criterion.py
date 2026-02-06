@@ -47,8 +47,8 @@ class SetCriterion(Criterion):
 
         Args:
             predictions: Model predictions, with keys
-                - `logits`: Class logits of shape (batch_size, num_queries, num_classes).
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_queries, 4).
+                - `logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
             targets: List of targets for each image, with keys
                 - `labels`: Target class labels of shape (num_targets,).
                 - `boxes`: Target bounding boxes of shape (num_targets, 4).
@@ -68,6 +68,9 @@ class SetCriterion(Criterion):
         if accelerator is not None:
             num_targets = accelerator.reduce(torch.tensor(num_targets, dtype=torch.float, device=accelerator.device), reduction="mean")
 
+        # Clamp to avoid division by zero in case of no targets
+        num_targets = max(num_targets, 1)
+
         # Weighted sum
         losses = {"box": box_loss / num_targets, "giou": giou_loss / num_targets, "class": class_loss / num_targets}
         losses["overall"] = sum(v * self.loss_weights.get(k, 1) for k, v in losses.items())
@@ -85,12 +88,12 @@ class SetCriterion(Criterion):
 
         Args:
             predictions: Model predictions, with keys
-                - `logits`: Class logits of shape (batch_size, num_queries, num_classes).
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_queries, 4).
+                - `logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
             targets: List of targets for each image, with keys
                 - `labels`: Target class labels of shape (num_targets,).
                 - `boxes`: Target bounding boxes of shape (num_targets, 4).
-            matched_indices: Matched prediction and target indices for each image in the batch.
+            matched_indices: Matched prediction and target indices.
 
         Returns:
             box_loss: L1 loss between matched boxes (summed).
@@ -98,13 +101,15 @@ class SetCriterion(Criterion):
             GIoU loss between matched boxes (summed).
         """
 
-        # Select the matched predictions and targets
-        batch_indices = torch.cat([torch.full_like(indices, i) for i, (indices, _) in enumerate(matched_indices)])
-        query_indices = torch.cat([indices for (indices, _) in matched_indices])
-        prediction_indices = (batch_indices, query_indices)
+        # Select matched predictions and targets
+        prediction_indices, target_indices = matched_indices
 
-        prediction_boxes = predictions["boxes"][prediction_indices]
-        target_boxes = torch.cat([t["boxes"][indices] for t, (_, indices) in zip(targets, matched_indices)])
+        prediction_boxes = predictions["boxes"][prediction_indices]  # (num_matches, 4)
+        target_boxes = torch.cat([t["boxes"][i].flatten(0, 1) for t, i in zip(targets, target_indices)])  # (num_matches, 4)
+
+        # No targets, return zero losses
+        if target_boxes.numel() == 0:
+            return torch.tensor(0.0, device=target_boxes.device), torch.tensor(0.0, device=target_boxes.device)
 
         # Minimize L1 Distance
         box_loss = F.l1_loss(prediction_boxes, target_boxes, reduction="sum")
@@ -123,31 +128,27 @@ class SetCriterion(Criterion):
 
         Args:
             predictions: Model predictions, with keys
-                - `logits`: Class logits of shape (batch_size, num_queries, num_classes).
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_queries, 4).
+                - `logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
             targets: List of targets for each image, with keys
                 - `labels`: Target class labels of shape (num_targets,).
                 - `boxes`: Target bounding boxes of shape (num_targets, 4).
-            matched_indices: Matched prediction and target indices for each image in the batch.
+            matched_indices: Matched prediction and target indices.
 
         Returns:
             class_loss: Classification loss (summed).
         """
 
-        # Select the matched predictions and targets
-        batch_indices = torch.cat([torch.full_like(src, i) for i, (src, _) in enumerate(matched_indices)])
-        query_indices = torch.cat([indices for (indices, _) in matched_indices])
-
-        prediction_logits = predictions["logits"]  # (batch_size, num_queries, num_classes)
-
-        target_labels = torch.cat([t["labels"][i] for t, (_, i) in zip(targets, matched_indices)])  # (num_targets)
-
-        # We use binary focal loss for classification
+        # We retain all  predictions to supervise unmatched predictions
+        prediction_logits = predictions["logits"]
         prediction_probs = prediction_logits.sigmoid()
 
-        # One-hot encode target labels
+        # Build one-hot encoded target labels for the matched predictions
+        prediction_indices, target_indices = matched_indices
+        target_labels = torch.cat([t["labels"][i].flatten(0, 1) for t, i in zip(targets, target_indices)])  # (num_matches,)
+
         one_hot_target_labels = torch.zeros_like(prediction_probs)
-        one_hot_target_labels[batch_indices, query_indices, target_labels] = 1.0
+        one_hot_target_labels[*prediction_indices, target_labels] = 1.0
 
         # Numerically stable version of α * (1 - prob) ** γ * -prob.log()
         pos_class_cost = self.alpha * ((1 - prediction_probs) ** self.gamma) * (-F.logsigmoid(prediction_logits))

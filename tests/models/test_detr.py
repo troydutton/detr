@@ -13,6 +13,7 @@ def test_detr_forward() -> None:
     # Model arguments
     num_classes = 10
     embed_dim = 64
+    num_decoder_layers = 2
     num_queries = 5
 
     kwargs = {
@@ -22,7 +23,7 @@ def test_detr_forward() -> None:
         },
         "transformer": {
             "num_encoder_layers": 1,
-            "num_decoder_layers": 1,
+            "num_decoder_layers": num_decoder_layers,
             "embed_dim": embed_dim,
             "ffn_dim": 128,
             "num_heads": 4,
@@ -45,10 +46,10 @@ def test_detr_forward() -> None:
     assert "logits" in output
 
     # Check output shapes
-    expected_logits_shape = (batch_size, num_queries, num_classes)
+    expected_logits_shape = (batch_size, num_decoder_layers, num_queries, num_classes)
     assert output["logits"].shape == expected_logits_shape, f"Expected logits shape {expected_logits_shape}, got {output['logits'].shape}"
 
-    expected_boxes_shape = (batch_size, num_queries, 4)
+    expected_boxes_shape = (batch_size, num_decoder_layers, num_queries, 4)
     assert output["boxes"].shape == expected_boxes_shape, f"Expected boxes shape {expected_boxes_shape}, got {output['boxes'].shape}"
 
     # Check that box coordinates are in [0, 1]

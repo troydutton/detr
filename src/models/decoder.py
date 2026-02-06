@@ -1,3 +1,4 @@
+import torch
 from torch import Tensor, nn
 
 from models.layers import MultiLayerPerceptron
@@ -15,6 +16,7 @@ class TransformerDecoder(nn.Module):
         num_heads: Number of attention heads.
         num_queries: Number of object queries.
         dropout: Dropout rate, optional.
+        return_intermediates: Whether to return intermediate transformer outputs, optional.
     """
 
     def __init__(
@@ -25,6 +27,8 @@ class TransformerDecoder(nn.Module):
         num_heads: int,
         num_queries: int,
         dropout: float = 0.0,
+        *,
+        return_intermediates: bool = True,
     ) -> None:
         super().__init__()
 
@@ -45,6 +49,8 @@ class TransformerDecoder(nn.Module):
 
         self.norm = nn.LayerNorm(embed_dim)
 
+        self.return_intermediates = return_intermediates
+
     def forward(self, features: Tensor, feature_pos: Tensor = None) -> Tensor:
         """
         Forward pass for the transformer decoder.
@@ -54,7 +60,7 @@ class TransformerDecoder(nn.Module):
             feature_pos: Feature positional embeddings with shape (batch_size, num_features, embed_dim).
 
         Returns:
-            queries: Object queries with shape (batch_size, num_queries, embed_dim).
+            queries: Object queries with shape (batch_size, num_layers, num_queries, embed_dim).
         """
 
         # Learnable content and positional embeddings for object queries
@@ -65,7 +71,9 @@ class TransformerDecoder(nn.Module):
         queries = queries.expand(features.shape[0], -1, -1)
         query_pos = query_pos.expand(features.shape[0], -1, -1)
 
-        for layer in self.layers:
+        output_queries = []
+
+        for i, layer in enumerate(self.layers):
             queries = layer(
                 queries,
                 features,
@@ -73,9 +81,14 @@ class TransformerDecoder(nn.Module):
                 feature_pos=feature_pos,
             )
 
-        queries = self.norm(queries)
+            # Because we use Pre-LN, the output of each decoder layer needs to be normalized
+            if self.return_intermediates or i == len(self.layers) - 1:
+                output_queries.append(self.norm(queries))
 
-        return queries
+        # (batch_size, num_layers, num_queries, embed_dim)
+        output_queries = torch.stack(output_queries, dim=1)
+
+        return output_queries
 
     @take_annotation_from(forward)
     def __call__(self, *args, **kwargs):

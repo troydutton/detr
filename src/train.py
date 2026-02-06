@@ -26,6 +26,7 @@ Args = Dict[str, Union[Any, "Args"]]
 def main(args: DictConfig) -> None:
     # Distributed setup
     accelerator = Accelerator()
+
     if not accelerator.is_main_process:
         logging.getLogger().setLevel(logging.ERROR)
 
@@ -53,8 +54,22 @@ def main(args: DictConfig) -> None:
 
     # Create dataloaders
     batch_size, num_workers = args["train"].pop("batch_size"), args["train"].pop("num_workers")
-    train_data = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, collate_fn=collate_fn)
-    val_data = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, collate_fn=collate_fn)
+    train_data = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        collate_fn=collate_fn,
+        pin_memory=True,
+    )
+    val_data = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        collate_fn=collate_fn,
+        pin_memory=True,
+    )
 
     # Create model (config/model/*.yaml)
     model: Model = instantiate(args["model"], num_classes=train_dataset.num_classes)
@@ -69,7 +84,7 @@ def main(args: DictConfig) -> None:
     args["scheduler"] = prepare_scheduler_arguments(args["scheduler"], steps_per_epoch=len(train_data) * accelerator.num_processes)
     scheduler: _LRScheduler = instantiate(args["scheduler"], optimizer=optimizer)
 
-    # Distribute the components
+    # Distribute training components
     model, optimizer, train_data, val_data, scheduler = accelerator.prepare(model, optimizer, train_data, val_data, scheduler)
 
     # Create criterion (config/criterion/*.yaml)

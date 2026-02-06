@@ -42,17 +42,17 @@ class CocoEvaluator(Evaluator):
 
         Args:
             predictions: Dictionary containing
-                - `logits`: Logits with shape (batch_size, num_queries, num_classes).
-                - `boxes`: Normalized boxes with shape (batch_size, num_queries, 4) in cxcywh format.
+                - `logits`: Logits with shape (batch_size, num_layers, num_queries, num_classes).
+                - `boxes`: Normalized boxes with shape (batch_size, num_layers, num_queries, 4) in cxcywh format.
             targets: List of targets, where each target contains
                 - `image_id`: Image ID.
                 - `orig_size`: Original image size [height, width].
             accelerator: Distributed accelerator, optional.
         """
 
-        # Get prediction boxes, scores, and labels
-        boxes = predictions["boxes"]
-        logits = predictions["logits"]
+        # Get prediction boxes, scores, and labels from the final layer
+        boxes = predictions["boxes"][:, -1]
+        logits = predictions["logits"][:, -1]
         scores, labels = logits.sigmoid().max(dim=-1)
 
         # Extract image ids and scales

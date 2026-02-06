@@ -53,6 +53,7 @@ class DETR(Model):
 
         Args:
             images: A batch of images with shape (batch, channels, height, width).
+            return_intermediates: Whether to return intermediate transformer outputs.
 
         Returns:
             predictions: A dictionary containing normalized CXCYWH `boxes` and raw class `logits`.
