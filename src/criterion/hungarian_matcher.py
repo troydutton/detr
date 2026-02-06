@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Dict, List, Tuple
 
+import numpy as np
 import torch
 from scipy.optimize import linear_sum_assignment
 from torch import Tensor
@@ -37,49 +38,64 @@ class HungarianMatcher:
 
         Args:
             predictions: Model predictions, with keys:
-                - `logits`: Class logits of shape (batch_size, num_queries, num_classes).
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_queries, 4).
+                - `logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
             targets: List of targets for each image, with keys:
                 - `labels`: Target class labels of shape (num_targets,).
                 - `boxes`: Target bounding boxes of shape (num_targets, 4).
 
         Returns:
-            matched_indices: Matched prediction and target indices for each image in the batch.
+            matched_indices: Matched prediction and target indices for each image and layer in the batch.
         """
 
-        batch_size, _, _ = predictions["logits"].shape
+        batch_size, num_layers, _, _ = predictions["logits"].shape
+        device = predictions["logits"].device
 
-        # TODO: Evaluate if batch processing is more efficient
-        matched_indices = []
+        # TODO: Improve efficiency by batching cost calculations across layers and images
+        matched_indices: List[Tensor] = []
 
         for i in range(batch_size):
-            # Retrieve image predictions and ground truths
-            prediction_logits = predictions["logits"][i]
-            prediction_boxes = predictions["boxes"][i]
+            matched_layer_indices = []
+
+            # Retrieve targets for the image
             target_labels = targets[i]["labels"]
             target_boxes = targets[i]["boxes"]
 
-            # Calculate individual costs
-            box_cost, giou_cost = self._calculate_box_costs(prediction_boxes, target_boxes)
-            class_cost = self._calculate_class_cost(prediction_logits, target_labels)
+            for j in range(num_layers):
+                # Retrieve predictions for the layer
+                prediction_logits = predictions["logits"][i, j]
+                prediction_boxes = predictions["boxes"][i, j]
 
-            # Weighted sum (num_predictions, num_targets)
-            costs = {"class": class_cost, "box": box_cost, "giou": giou_cost}
-            total_cost = sum(self.cost_weights.get(k, 1) * v for k, v in costs.items())
+                # Calculate individual costs
+                box_cost, giou_cost = self._calculate_box_costs(prediction_boxes, target_boxes)
+                class_cost = self._calculate_class_cost(prediction_logits, target_labels)
 
-            # Handle NaN and infinite values
-            total_cost.nan_to_num_(nan=1e6, posinf=1e6, neginf=-1e6)
-            total_cost.clamp_(-1e6, 1e6)
+                # Weighted sum (num_predictions, num_targets)
+                costs = {"class": class_cost, "box": box_cost, "giou": giou_cost}
+                total_cost = sum(self.cost_weights.get(k, 1) * v for k, v in costs.items())
 
-            # Solve the linear sum assignment problem
-            prediction_indices, target_indices = linear_sum_assignment(total_cost.cpu())
+                # Handle NaN and infinite values
+                total_cost.nan_to_num_(nan=1e6, posinf=1e6, neginf=-1e6)
+                total_cost.clamp_(-1e6, 1e6)
 
-            # Store the prediction and target indices for the image
-            prediction_indices = torch.as_tensor(prediction_indices, dtype=torch.int64, device=total_cost.device)
-            target_indices = torch.as_tensor(target_indices, dtype=torch.int64, device=total_cost.device)
-            matched_indices.append((prediction_indices, target_indices))
+                # Solve the linear sum assignment problem
+                indices = linear_sum_assignment(total_cost.cpu())
 
-        return matched_indices
+                # Store the prediction and target indices for the image
+                matched_layer_indices.append(torch.from_numpy(np.stack(indices)).to(device))
+
+            matched_indices.append(torch.stack(matched_layer_indices, dim=1))
+
+        # Create prediction and target indices
+        matches_per_image = torch.tensor([indices.shape[-1] for indices in matched_indices], device=device)
+
+        batch_indices = torch.repeat_interleave(torch.arange(batch_size, device=device), matches_per_image * num_layers)
+        layer_indices = torch.cat([torch.arange(num_layers, device=device).repeat_interleave(count) for count in matches_per_image])
+        query_indices = torch.cat([indices.flatten() for (indices, _) in matched_indices])
+
+        target_indices = [indices for (_, indices) in matched_indices]
+
+        return (batch_indices, layer_indices, query_indices), target_indices
 
     def _calculate_box_costs(self, prediction_boxes: Tensor, target_boxes: Tensor) -> Tuple[Tensor, Tensor]:
         """

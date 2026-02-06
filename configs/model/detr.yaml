@@ -14,5 +14,6 @@ transformer:
   num_heads: 8
   num_queries: 100
   dropout: 0.1
+  return_intermediates: True
 
   

@@ -1,6 +1,8 @@
+import logging
 from typing import Any, Dict, Union
 
 import hydra
+from accelerate import Accelerator
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
@@ -11,13 +13,17 @@ from engine import evaluate
 from evaluators import CocoEvaluator
 from models import Model
 
-device = "cuda:0"
-
 Args = Dict[str, Union[Any, "Args"]]
 
 
 @hydra.main(config_path="../configs", config_name="config", version_base=None)
 def main(args: DictConfig) -> None:
+    # Distributed setup
+    accelerator = Accelerator()
+
+    if not accelerator.is_main_process:
+        logging.getLogger().setLevel(logging.ERROR)
+
     # Resolve arguments
     args: Args = OmegaConf.to_container(args, resolve=True, throw_on_missing=True)
 
@@ -26,7 +32,13 @@ def main(args: DictConfig) -> None:
 
     # Create dataloader
     batch_size, num_workers = args["train"]["batch_size"], args["train"]["num_workers"]
-    val_data = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, collate_fn=collate_fn)
+    val_data = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        collate_fn=collate_fn,
+    )
 
     # Ensure checkpoint is provided
     checkpoint = args["train"].get("checkpoint")
@@ -34,7 +46,11 @@ def main(args: DictConfig) -> None:
         raise ValueError("Please provide a checkpoint path via 'train.checkpoint=/path/to/checkpoint.pt'")
 
     # Create model (config/model/*.yaml)
-    model: Model = instantiate(args["model"], num_classes=val_dataset.num_classes, pretrained_weights=checkpoint).to(device)
+    args["model"]["pretrained_weights"] = checkpoint
+    model: Model = instantiate(args["model"], num_classes=val_dataset.num_classes)
+
+    # Distribute evaluation components
+    model, val_data = accelerator.prepare(model, val_data)
 
     # Create criterion (config/criterion/*.yaml)
     class_weights = val_dataset.calculate_class_weights(beta=args["criterion"].pop("beta"))
@@ -50,22 +66,22 @@ def main(args: DictConfig) -> None:
         evaluator=evaluator,
         data=val_data,
         epoch=0,
-        device=device,
-        amp=args["train"]["amp"],
+        accelerator=accelerator,
     )
 
     # Log results
-    header = " Evaluation Results "
-    width = max(len(header), 80)
+    if accelerator.is_main_process:
+        header = " Evaluation Results "
+        width = max(len(header), 80)
 
-    print(f"\n{header:=^{width}}")
-    print(f"Checkpoint: {checkpoint}")
-    print(f"Dataset: {val_dataset.root / val_dataset.split}")
-    print(f"{' Losses ':-^{width}}")
-    print(", ".join([f"{k}: {v:.2f}" for k, v in losses.items()]))
-    print(f"{' Metrics ':-^{width}}")
-    print(", ".join([f"{k}: {v:.2f}" for k, v in metrics.items()]))
-    print("=" * width)
+        print(f"\n{header:=^{width}}")
+        print(f"Checkpoint: {checkpoint}")
+        print(f"Dataset: {val_dataset.root / val_dataset.split}")
+        print(f"{' Losses ':-^{width}}")
+        print(", ".join([f"{k}: {v:.2f}" for k, v in losses.items()]))
+        print(f"{' Metrics ':-^{width}}")
+        print(", ".join([f"{k}: {v:.2f}" for k, v in metrics.items()]))
+        print("=" * width)
 
 
 if __name__ == "__main__":
