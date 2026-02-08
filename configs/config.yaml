@@ -11,7 +11,7 @@ defaults:
 train:
   output_dir: /data/troy/models/detr/detr-nano
   num_epochs: 300
-  batch_size: 128
+  batch_size: 64
   num_workers: 6
   save_period: 5
   max_grad_norm: 0.1

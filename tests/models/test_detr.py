@@ -17,20 +17,37 @@ def test_detr_forward() -> None:
     num_queries = 5
 
     kwargs = {
+        "embed_dim": embed_dim,
+        "num_classes": num_classes,
         "backbone": {
             "name": "resnet50s",
+            "embed_dim": embed_dim,
             "pretrained": False,
         },
-        "transformer": {
-            "num_encoder_layers": 1,
-            "num_decoder_layers": num_decoder_layers,
+        "encoder": {
+            "num_layers": 1,
             "embed_dim": embed_dim,
-            "ffn_dim": 128,
-            "num_heads": 4,
-            "num_queries": num_queries,
-            "dropout": 0.0,
+            "layer": {
+                "_target_": "models.encoder.EncoderLayer",
+                "embed_dim": embed_dim,
+                "ffn_dim": 128,
+                "num_heads": 4,
+                "dropout": 0.0,
+            },
         },
-        "num_classes": num_classes,
+        "decoder": {
+            "num_layers": num_decoder_layers,
+            "embed_dim": embed_dim,
+            "num_queries": num_queries,
+            "return_intermediates": True,
+            "layer": {
+                "_target_": "models.decoder.DecoderLayer",
+                "embed_dim": embed_dim,
+                "ffn_dim": 128,
+                "num_heads": 4,
+                "dropout": 0.0,
+            },
+        },
     }
 
     model = DETR(**kwargs)

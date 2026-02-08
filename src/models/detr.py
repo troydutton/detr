@@ -8,9 +8,10 @@ import torch
 from torch import Tensor, nn
 
 from models.backbone import Backbone
+from models.decoder import TransformerDecoder
+from models.encoder import TransformerEncoder
 from models.layers import MultiLayerPerceptron
 from models.model import Model
-from models.transformer import Transformer
 
 if TYPE_CHECKING:
     from models.model import Predictions
@@ -21,29 +22,31 @@ class DETR(Model):
     Implementation of ["End-to-End Object Detection with Transformers"](https://arxiv.org/abs/2005.12872).
 
     Args:
+        embed_dim: Embedding dimension.
         num_classes: Number of object classes.
         pretrained_weights: Path to a pretrained weights file.
         kwargs: Arguments to construct the backbone and transformer.
             See `models.backbone.Backbone` and `models.transformer.Transformer`.
     """
 
-    def __init__(self, num_classes: int, pretrained_weights: str = None, **kwargs) -> None:
+    def __init__(self, embed_dim: int, num_classes: int, pretrained_weights: str = None, **kwargs) -> None:
         super().__init__()
 
         self.num_classes = num_classes
 
         # Create & initialize the bounding box and classification heads
         self.bbox_head = MultiLayerPerceptron(
-            input_dim=(embed_dim := kwargs["transformer"]["embed_dim"]),
+            input_dim=embed_dim,
             hidden_dim=embed_dim,
             output_dim=4,
             num_layers=3,
         )
         self.class_head = nn.Linear(embed_dim, num_classes)
 
-        # Build the backbone and transformer
-        self.backbone = Backbone(**kwargs["backbone"], embed_dim=embed_dim)
-        self.transformer = Transformer(**kwargs["transformer"])
+        # Build the backbone, transformer encoder, and transformer decoder
+        self.backbone = Backbone(**kwargs["backbone"])
+        self.encoder = TransformerEncoder(**kwargs["encoder"])
+        self.decoder = TransformerDecoder(**kwargs["decoder"])
 
         self._initialize_weights(pretrained_weights=pretrained_weights)
 
@@ -60,15 +63,18 @@ class DETR(Model):
         """
 
         # Extract image features
-        features, feature_pos = self.backbone(images)
+        features = self.backbone(images)
 
-        # Decode object queries for the image
-        object_queries = self.transformer(features, feature_pos)
+        # Encode the features
+        features = self.encoder(features)
+
+        # Decode object queries
+        query_embed, query_ref = self.decoder(features)
 
         # Predict bounding boxes and class logits
         predictions = {
-            "boxes": self.bbox_head(object_queries).sigmoid(),
-            "logits": self.class_head(object_queries),
+            "boxes": self.bbox_head(query_embed).sigmoid(),
+            "logits": self.class_head(query_embed),
         }
 
         return predictions

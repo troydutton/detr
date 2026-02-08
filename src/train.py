@@ -72,7 +72,8 @@ def main(args: DictConfig) -> None:
     )
 
     # Create model (config/model/*.yaml)
-    model: Model = instantiate(args["model"], num_classes=train_dataset.num_classes)
+    args["model"]["num_classes"] = train_dataset.num_classes
+    model: Model = instantiate(args["model"], _recursive_=False)
 
     # Create optimizer (config/optimizer/*.yaml)
     lr, lr_backbone = args["optimizer"]["lr"], args["optimizer"].pop("lr_backbone")
