@@ -1,19 +1,31 @@
 _target_: models.detr.DETR
-
+embed_dim: 256
 pretrained_weights: Null
 
 backbone:
-  name: convnext_tiny 
+  name: convnext_tiny
+  embed_dim: ${model.embed_dim}
+  num_levels: 2
   pretrained: True
 
-transformer:
-  num_encoder_layers: 6
-  num_decoder_layers: 6
-  embed_dim: 256
-  ffn_dim: 2048
-  num_heads: 8
-  num_queries: 100
-  dropout: 0.1
-  return_intermediates: True
+encoder:
+  num_layers: 6
+  embed_dim: ${model.embed_dim}
+  layer:
+    _target_: models.encoder.EncoderLayer
+    embed_dim: ${model.embed_dim}
+    ffn_dim: 2048
+    num_heads: 8
+    dropout: 0.1
 
-  
+decoder:
+  num_layers: 6
+  embed_dim: ${model.embed_dim}
+  num_queries: 100
+  return_intermediates: True
+  layer:
+    _target_: models.decoder.DecoderLayer
+    embed_dim: ${model.embed_dim}
+    ffn_dim: ${model.encoder.layer.ffn_dim}
+    num_heads: ${model.encoder.layer.num_heads}
+    dropout: ${model.encoder.layer.dropout}

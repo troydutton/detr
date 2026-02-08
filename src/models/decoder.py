@@ -1,8 +1,19 @@
+from dataclasses import dataclass
+
 import torch
+from hydra.utils import instantiate
 from torch import Tensor, nn
 
+from models.backbone import Features
 from models.layers import MultiLayerPerceptron
 from utils.misc import take_annotation_from
+
+
+@dataclass
+class Queries:
+    embed: Tensor
+    pos: Tensor
+    reference: Tensor
 
 
 class TransformerDecoder(nn.Module):
@@ -12,90 +23,100 @@ class TransformerDecoder(nn.Module):
     Args:
         num_layers: Number of decoder layers.
         embed_dim: Embedding dimension.
-        ffn_dim: Feedforward network dimension.
-        num_heads: Number of attention heads.
         num_queries: Number of object queries.
-        dropout: Dropout rate, optional.
         return_intermediates: Whether to return intermediate transformer outputs, optional.
+        kwargs: Arguments to construct the decoder layers.
+            See `models.decoder.DecoderLayer` or `models.decoder.DeformableDecoderLayer`.
+
     """
 
     def __init__(
         self,
         num_layers: int,
         embed_dim: int,
-        ffn_dim: int,
-        num_heads: int,
         num_queries: int,
-        dropout: float = 0.0,
-        *,
         return_intermediates: bool = True,
+        **kwargs,
     ) -> None:
         super().__init__()
 
+        self.return_intermediates = return_intermediates
+
         self.queries = nn.Embedding(num_queries, embed_dim)  # Learnable content for initializing object queries
         self.query_pos = nn.Embedding(num_queries, embed_dim)  # Learnable positional embeddings for object queries
+        self.reference_head = nn.Linear(embed_dim, 2)  # Mapping from positional embeddings to reference points
 
-        self.layers = nn.ModuleList(
-            [
-                TransformerDecoderLayer(
-                    embed_dim=embed_dim,
-                    ffn_dim=ffn_dim,
-                    num_heads=num_heads,
-                    dropout=dropout,
-                )
-                for _ in range(num_layers)
-            ]
-        )
+        self.layers = nn.ModuleList([instantiate(kwargs["layer"]) for _ in range(num_layers)])
 
         self.norm = nn.LayerNorm(embed_dim)
 
-        self.return_intermediates = return_intermediates
-
-    def forward(self, features: Tensor, feature_pos: Tensor = None) -> Tensor:
+    def forward(self, features: Features) -> Tensor:
         """
         Forward pass for the transformer decoder.
 
         Args:
-            features: Features with shape (batch_size, num_features, embed_dim).
-            feature_pos: Feature positional embeddings with shape (batch_size, num_features, embed_dim).
+            features: Multi-level features with shape (batch_size, num_features, embed_dim).
 
         Returns:
-            queries: Object queries with shape (batch_size, num_layers, num_queries, embed_dim).
+            query_embed: Query embeddings with shape (batch_size, num_layers, num_queries, embed_dim).
+            query_ref: Query reference boxes with shape (batch_size, num_layers, num_queries, 4).
         """
 
-        # Learnable content and positional embeddings for object queries
-        queries = self.queries.weight.unsqueeze(0)
-        query_pos = self.query_pos.weight.unsqueeze(0)
+        # Initialize the object queries
+        queries = self._intialize_object_queries(features)
 
-        # Expand the queries across the batch size
-        queries = queries.expand(features.shape[0], -1, -1)
-        query_pos = query_pos.expand(features.shape[0], -1, -1)
-
-        output_queries = []
-
+        # Iteratively decode the object queries
+        query_embed, query_ref = [], []
         for i, layer in enumerate(self.layers):
-            queries = layer(
-                queries,
-                features,
-                query_pos=query_pos,
-                feature_pos=feature_pos,
-            )
+            queries: Queries = layer(queries, features)
 
-            # Because we use Pre-LN, the output of each decoder layer needs to be normalized
+            # Because we use Pre-LN, the output of each decoder layer still needs to be normalized
             if self.return_intermediates or i == len(self.layers) - 1:
-                output_queries.append(self.norm(queries))
+                query_embed.append(self.norm(queries.embed))
+                query_ref.append(queries.reference)
 
         # (batch_size, num_layers, num_queries, embed_dim)
-        output_queries = torch.stack(output_queries, dim=1)
+        query_embed = torch.stack(query_embed, dim=1)
+        query_ref = torch.stack(query_ref, dim=1)
 
-        return output_queries
+        return query_embed, query_ref
+
+    def _intialize_object_queries(self, features: Features) -> Queries:
+        """
+        Initializes the object queries for the transformer decoder.
+
+        Args:
+            Features: Multi-level features, with shape (batch_size, num_features, embed_dim).
+
+        Returns:
+            queries: Object queries with the following fields
+        """
+
+        # Get batch information
+        batch_size, _, _ = features.embed.shape
+
+        # Initialize the object queries
+        query_embed = self.queries.weight.unsqueeze(0)
+        query_pos = self.query_pos.weight.unsqueeze(0)
+
+        # Calculate initial reference boxes
+        xy = torch.sigmoid(self.reference_head(query_pos))
+        wh = torch.full_like(xy, 0.1)
+        query_ref = torch.cat([xy, wh], dim=-1)
+
+        # Expand the queries across the batch size
+        query_embed = query_embed.expand(batch_size, -1, -1)
+        query_pos = query_pos.expand(batch_size, -1, -1)
+        query_ref = query_ref.expand(batch_size, -1, -1)
+
+        return Queries(embed=query_embed, pos=query_pos, reference=query_ref)
 
     @take_annotation_from(forward)
     def __call__(self, *args, **kwargs):
         return nn.Module.__call__(self, *args, **kwargs)
 
 
-class TransformerDecoderLayer(nn.Module):
+class DecoderLayer(nn.Module):
     """
     Single layer of the transformer decoder.
 
@@ -146,43 +167,34 @@ class TransformerDecoderLayer(nn.Module):
         )
         self.dropout3 = nn.Dropout(dropout)
 
-    def forward(
-        self,
-        queries: Tensor,
-        features: Tensor,
-        query_pos: Tensor = None,
-        feature_pos: Tensor = None,
-    ) -> Tensor:
+    def forward(self, queries: Queries, features: Features) -> Queries:
         """
         Forward pass for a single transformer decoder layer.
 
         Args:
             queries: Object queries with shape (batch_size, num_queries, embed_dim).
-            features: Features with shape (batch_size, num_features, embed_dim).
-            feature_pos: Feature positional embeddings with shape (batch_size, num_features, embed_dim).
-            query_pos: Query positional embeddings with shape (batch_size, num_queries, embed_dim).
+            features: Multi-level features with shape (batch_size, num_features, embed_dim).
 
         Returns:
             queries: Object queries with the same shape as the input.
         """
 
-        assert features.ndim == 3, f"Expected features of shape (batch_size, num_features, embed_dim), got {features.shape=}"
-        assert queries.ndim == 3, f"Expected queries of shape (batch_size, num_queries, embed_dim), got {queries.shape=}"
+        assert queries.embed.ndim == 3, f"Expected queries of shape (batch_size, num_queries, embed_dim), got {queries.embed.shape=}"
+        assert features.embed.ndim == 3, f"Expected features of shape (batch_size, num_features, embed_dim), got {features.embed.shape=}"
 
         # Self-attention
-        v = self.norm1(queries)
-        q = k = v if query_pos is None else v + query_pos
-        queries = queries + self.dropout1(self.self_attention(q, k, v, need_weights=False)[0])
+        v = self.norm1(queries.embed)
+        q = k = v + queries.pos
+        queries.embed = queries.embed + self.dropout1(self.self_attention(q, k, v, need_weights=False)[0])
 
         # Cross-attention
-        q = self.norm2(queries)
-        q = q if query_pos is None else q + query_pos
-        k = features if feature_pos is None else features + feature_pos
-        v = features
-        queries = queries + self.dropout2(self.cross_attention(q, k, v, need_weights=False)[0])
+        q = self.norm2(queries.embed) + queries.pos
+        k = features.embed + features.pos
+        v = features.embed
+        queries.embed = queries.embed + self.dropout2(self.cross_attention(q, k, v, need_weights=False)[0])
 
         # Feedforward Network
-        queries = queries + self.dropout3(self.ffn(self.norm3(queries)))
+        queries.embed = queries.embed + self.dropout3(self.ffn(self.norm3(queries.embed)))
 
         return queries
 

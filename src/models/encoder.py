@@ -1,5 +1,7 @@
-from torch import Tensor, nn
+from hydra.utils import instantiate
+from torch import nn
 
+from models.backbone import Features
 from models.layers import MultiLayerPerceptron
 from utils.misc import take_annotation_from
 
@@ -11,55 +13,38 @@ class TransformerEncoder(nn.Module):
     Args:
         num_layers: Number of encoder layers.
         embed_dim: Embedding dimension.
-        ffn_dim: Feedforward network dimension.
-        num_heads: Number of attention heads.
-        dropout: Dropout rate, optional.
+        kwargs: Arguments to construct the encoder layers.
+            See `models.encoder.EncoderLayer` or `models.encoder.DeformableEncoderLayer`.
     """
 
     def __init__(
         self,
         num_layers: int,
         embed_dim: int,
-        ffn_dim: int,
-        num_heads: int,
-        dropout: float = 0.0,
+        **kwargs,
     ) -> None:
         super().__init__()
 
-        self.layers = nn.ModuleList(
-            [
-                TransformerEncoderLayer(
-                    embed_dim=embed_dim,
-                    ffn_dim=ffn_dim,
-                    num_heads=num_heads,
-                    dropout=dropout,
-                )
-                for _ in range(num_layers)
-            ]
-        )
+        self.layers = nn.ModuleList([instantiate(kwargs["layer"]) for _ in range(num_layers)])
 
         self.norm = nn.LayerNorm(embed_dim)
 
-    def forward(self, features: Tensor, positional_embeddings: Tensor = None) -> Tensor:
+    def forward(self, features: Features) -> Features:
         """
         Forward pass for the transformer encoder.
 
-        If provided, positional encodings are added to the queries and keys in the
-        self-attention operation at every layer to maintain spatial context.
-
         Args:
-            features: Features with shape (batch_size, num_features, embed_dim).
-            positional_embeddings: Positional embeddings with shape (batch_size, num_features, embed_dim).
+            features: Multi-level features with shape (batch_size, num_features, embed_dim).
 
         Returns:
-            features: Features with the same shape as the input.
+            features: Multi-level features with shape (batch_size, num_features, embed_dim).
         """
 
         for layer in self.layers:
-            features = layer(features, positional_embeddings)
+            features = layer(features)
 
         # Final normalization because we're using Pre-LN layers
-        features = self.norm(features)
+        features.embed = self.norm(features.embed)
 
         return features
 
@@ -68,7 +53,7 @@ class TransformerEncoder(nn.Module):
         return nn.Module.__call__(self, *args, **kwargs)
 
 
-class TransformerEncoderLayer(nn.Module):
+class EncoderLayer(nn.Module):
     """
     Single layer of the transformer encoder.
 
@@ -110,27 +95,26 @@ class TransformerEncoderLayer(nn.Module):
         )
         self.dropout2 = nn.Dropout(dropout)
 
-    def forward(self, features: Tensor, feature_pos: Tensor = None) -> Tensor:
+    def forward(self, features: Features) -> Features:
         """
         Forward pass for a single transformer encoder layer.
 
         Args:
-            features: Features with shape (batch_size, num_features, embed_dim).
-            feature_pos: Feature positional embeddings with shape (batch_size, num_features, embed_dim).
+            features: Multi-level features with shape (batch_size, num_features, embed_dim).
 
         Returns:
-            features: Features with the same shape as the input.
+            features: Multi-level features with shape (batch_size, num_features, embed_dim).
         """
 
-        assert features.ndim == 3, f"Expected features of shape (batch_size, num_features, embed_dim), got {features.shape=}"
+        assert features.embed.ndim == 3, f"Expected features of shape (batch_size, num_features, embed_dim), got {features.embed.shape=}"
 
         # Self-attention
-        v = self.norm1(features)
-        q = k = v if feature_pos is None else v + feature_pos
-        features = features + self.dropout1(self.self_attention(q, k, v, need_weights=False)[0])
+        v = self.norm1(features.embed)
+        q = k = v + features.pos
+        features.embed = features.embed + self.dropout1(self.self_attention(q, k, v, need_weights=False)[0])
 
         # Feed forward network
-        features = features + self.dropout2(self.ffn(self.norm2(features)))
+        features.embed = features.embed + self.dropout2(self.ffn(self.norm2(features.embed)))
 
         return features
 
