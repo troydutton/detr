@@ -5,17 +5,19 @@ embed_dim: 256
 backbone:
   name: convnext_tiny
   embed_dim: ${model.embed_dim}
-  num_levels: 1
+  num_levels: 2
   pretrained: True
 
 encoder:
   num_layers: 6
   embed_dim: ${model.embed_dim}
   layer:
-    _target_: models.encoder.EncoderLayer
+    _target_: models.encoder.DeformableEncoderLayer
     embed_dim: ${model.embed_dim}
     ffn_dim: 2048
     num_heads: 8
+    num_levels: ${model.backbone.num_levels}
+    num_points: 5
     dropout: 0.1
 
 decoder:

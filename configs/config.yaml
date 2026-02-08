@@ -2,17 +2,17 @@ defaults:
   - hydra: simple
   - dataset: coco
   - transforms: nano
-  - model: detr
+  - model: ddetr
   - optimizer: adamw
   - scheduler: step
   - criterion: detr
   - _self_
 
 train:
-  output_dir: /data/troy/models/detr/detr-nano
+  output_dir: /data/troy/models/detr/ddetr-nano
   num_epochs: 300
-  batch_size: 64
+  batch_size: 128
   num_workers: 6
-  save_period: 5
+  save_period: 10
   max_grad_norm: 0.1
   checkpoint: Null

@@ -44,7 +44,7 @@ class TransformerDecoder(nn.Module):
 
         self.queries = nn.Embedding(num_queries, embed_dim)  # Learnable content for initializing object queries
         self.query_pos = nn.Embedding(num_queries, embed_dim)  # Learnable positional embeddings for object queries
-        self.reference_head = nn.Linear(embed_dim, 2)  # Mapping from positional embeddings to reference points
+        # self.reference_head = nn.Linear(embed_dim, 2)  # Mapping from positional embeddings to reference points
 
         self.layers = nn.ModuleList([instantiate(kwargs["layer"]) for _ in range(num_layers)])
 
@@ -93,16 +93,17 @@ class TransformerDecoder(nn.Module):
         """
 
         # Get batch information
-        batch_size, _, _ = features.embed.shape
+        batch_size, num_features, _ = features.embed.shape
 
         # Initialize the object queries
         query_embed = self.queries.weight.unsqueeze(0)
         query_pos = self.query_pos.weight.unsqueeze(0)
 
         # Calculate initial reference boxes
-        xy = torch.sigmoid(self.reference_head(query_pos))
-        wh = torch.full_like(xy, 0.1)
-        query_ref = torch.cat([xy, wh], dim=-1)
+        # xy = torch.sigmoid(self.reference_head(query_pos))
+        # wh = torch.full_like(xy, 0.1)
+        # query_ref = torch.cat([xy, wh], dim=-1)
+        query_ref = torch.zeros(1, num_features, 4, device=features.embed.device)
 
         # Expand the queries across the batch size
         query_embed = query_embed.expand(batch_size, -1, -1)
