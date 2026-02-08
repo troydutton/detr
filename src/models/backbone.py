@@ -114,15 +114,12 @@ class Backbone(nn.Module):
         multi_level_reference = torch.cat(multi_level_reference, dim=1)
         dimensions = torch.tensor(dimensions, device=device)
 
-        # Build the
-        multi_level_features = Features(
+        return Features(
             embed=multi_level_features,
             pos=multi_level_pos,
             reference=multi_level_reference,
             dimensions=dimensions,
         )
-
-        return multi_level_features
 
     @take_annotation_from(forward)
     def __call__(self, *args, **kwargs):

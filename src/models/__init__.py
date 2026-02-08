@@ -1,4 +1,3 @@
-from .detr import DETR
-from .model import Model, Predictions
+from .detr import DETR, Predictions
 
-__all__ = [Model, DETR, Predictions]
+__all__ = [DETR, Predictions]

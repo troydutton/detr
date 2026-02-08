@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 import logging
 import math
-from typing import TYPE_CHECKING
+from typing import Dict
 
 import torch
 from torch import Tensor, nn
@@ -11,13 +9,11 @@ from models.backbone import Backbone
 from models.decoder import TransformerDecoder
 from models.encoder import TransformerEncoder
 from models.layers import MultiLayerPerceptron
-from models.model import Model
 
-if TYPE_CHECKING:
-    from models.model import Predictions
+Predictions = Dict[str, Tensor]
 
 
-class DETR(Model):
+class DETR(nn.Module):
     """
     Implementation of ["End-to-End Object Detection with Transformers"](https://arxiv.org/abs/2005.12872).
 

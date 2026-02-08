@@ -15,7 +15,7 @@ from criterion import Criterion
 from data import CocoDataset, collate_fn
 from engine import train
 from evaluators import CocoEvaluator
-from models import Model
+from models import DETR
 from utils.lr import prepare_scheduler_arguments
 from utils.optimizer import build_parameter_groups
 
@@ -73,7 +73,7 @@ def main(args: DictConfig) -> None:
 
     # Create model (config/model/*.yaml)
     args["model"]["num_classes"] = train_dataset.num_classes
-    model: Model = instantiate(args["model"], _recursive_=False)
+    model = DETR(**args["model"])
 
     # Create optimizer (config/optimizer/*.yaml)
     lr, lr_backbone = args["optimizer"]["lr"], args["optimizer"].pop("lr_backbone")
