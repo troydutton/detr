@@ -1,0 +1,18 @@
+defaults:
+  - hydra: simple
+  - dataset: coco
+  - transforms: nano
+  - model: ddetr
+  - optimizer: adamw
+  - scheduler: step
+  - criterion: detr
+  - _self_
+
+train:
+  output_dir: /data/troy/models/ddetr/ddetr-nano
+  num_epochs: 300
+  batch_size: 128
+  num_workers: 6
+  save_period: 10
+  max_grad_norm: 0.1
+  checkpoint: Null
