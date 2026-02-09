@@ -22,7 +22,7 @@ from utils.optimizer import build_parameter_groups
 Args = Dict[str, Union[Any, "Args"]]
 
 
-@hydra.main(config_path="../configs", config_name="config", version_base=None)
+@hydra.main(config_path="../configs", config_name="detr", version_base=None)
 def main(args: DictConfig) -> None:
     # Distributed setup
     accelerator = Accelerator()
@@ -70,6 +70,7 @@ def main(args: DictConfig) -> None:
         collate_fn=collate_fn,
         pin_memory=True,
     )
+    logging.info(f"Train dataloader has {len(train_data):,} batches, validation dataloader has {len(val_data):,} batches.")
 
     # Create model (config/model/*.yaml)
     args["model"]["num_classes"] = train_dataset.num_classes
@@ -81,8 +82,7 @@ def main(args: DictConfig) -> None:
     optimizer: Optimizer = instantiate(args["optimizer"], _convert_="all")
 
     # Create learning rate scheduler (config/scheduler/*.yaml)
-    logging.info(f"Preparing scheduler with {len(train_data)=} and {accelerator.num_processes=}")
-    args["scheduler"] = prepare_scheduler_arguments(args["scheduler"], steps_per_epoch=len(train_data) * accelerator.num_processes)
+    args["scheduler"] = prepare_scheduler_arguments(args["scheduler"], steps_per_epoch=len(train_data))
     scheduler: _LRScheduler = instantiate(args["scheduler"], optimizer=optimizer)
 
     # Distribute training components
