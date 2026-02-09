@@ -37,7 +37,7 @@ class CocoDataset(Dataset):
 
         # Initialize COCO API (silencing stdout to avoid clutter)
         with silence_stdout():
-            self.coco = COCO(self.root / f"annotations/instances_{split}.json")
+            self.coco = COCO(self.root / f"annotations/{split}.json")
             self.coco.createIndex()
         self.image_ids = list(self.coco.imgs.keys())
 

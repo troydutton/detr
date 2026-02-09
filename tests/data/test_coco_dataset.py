@@ -41,7 +41,7 @@ def coco_path(tmp_path: Path) -> Path:
         ],
         "categories": [{"id": 1, "name": "person"}, {"id": 2, "name": "dog"}],
     }
-    with open(root / f"annotations/instances_{split}.json", "w") as f:
+    with open(root / f"annotations/{split}.json", "w") as f:
         json.dump(annotations, f)
 
     return root
