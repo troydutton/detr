@@ -183,7 +183,12 @@ class DeformableEncoderLayer(nn.Module):
 
         # Self-attention
         features.embed = features.embed + self.dropout1(
-            self.self_attention(features.embed, features.reference, features.embed, features.dimensions)
+            self.self_attention(
+                queries=features.embed,
+                query_reference=features.reference,
+                features=features.embed,
+                dimensions=features.dimensions,
+            )
         )
 
         # Feed forward network

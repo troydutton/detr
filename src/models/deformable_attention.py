@@ -4,6 +4,8 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
+from utils.misc import take_annotation_from
+
 
 class MultiHeadDeformableAttention(nn.Module):
     def __init__(self, embed_dim: int, num_heads: int, num_levels: int, num_points: int):
@@ -15,52 +17,54 @@ class MultiHeadDeformableAttention(nn.Module):
         self.num_levels = num_levels
         self.num_points = num_points
 
-        self.sampling_offsets: ProjectionType = nn.Linear(embed_dim, num_heads * num_levels * num_points * 2)
-        self.attention_weights: ProjectionType = nn.Linear(embed_dim, num_heads * num_levels * num_points)
-        self.value_proj: ProjectionType = nn.Linear(embed_dim, embed_dim)
-        self.output_proj: ProjectionType = nn.Linear(embed_dim, embed_dim)
+        self.sampling_offsets: LinearType = nn.Linear(embed_dim, num_heads * num_levels * num_points * 2)
+        self.attention_weights: LinearType = nn.Linear(embed_dim, num_heads * num_levels * num_points)
+        self.value_proj: LinearType = nn.Linear(embed_dim, embed_dim)
+        self.output_proj: LinearType = nn.Linear(embed_dim, embed_dim)
 
-    def forward(self, query: Tensor, query_reference: Tensor, features: Tensor, dimensions: Tensor) -> Tensor:
+        self._intialize_weights()
+
+    def forward(self, queries: Tensor, query_reference: Tensor, features: Tensor, dimensions: Tensor) -> Tensor:
         """
         Args:
-            query: Query features with shape (batch_size, num_queries, embed_dim).
+            queries: Query features with shape (batch_size, num_queries, embed_dim).
             query_reference: Reference points/boxes for the queries with shape (batch_size, num_queries, 2 or 4).
             features: Multi-level features with shape (batch_size, num_features, embed_dim).
             dimensions: Height and width of each feature level with shape (num_levels, 2).
         """
-        batch_size, num_queries, _ = query.shape
+        batch_size, num_queries, embed_dim = queries.shape
 
         # Compute sampling locations: (x + (Δx * w), y + (Δy * h))
-        query_reference = query_reference.view(batch_size, num_queries, 1, 1, -1)
-        offsets = self.sampling_offsets(query).view(batch_size, num_queries, self.num_heads, self.num_levels, self.num_points, 2)
+        query_reference = query_reference.view(batch_size, num_queries, 1, 1, 1, -1)
+        offsets = self.sampling_offsets(queries).view(batch_size, num_queries, self.num_heads, self.num_levels, self.num_points, 2)
+        offsets = offsets / dimensions.view(1, 1, 1, self.num_levels, 1, 2)
 
-        if query_reference.shape[-1] == 2:  # Points -> no scaling
-            points = query_reference[..., :2] + offsets
-        elif query_reference.shape[-1] == 4:  # Boxes -> scale by w/h
+        if query_reference.shape[-1] == 2:  # Points -> (x + Δx, y + Δy)
+            points = query_reference + offsets
+        elif query_reference.shape[-1] == 4:  # Boxes -> (x + (Δx * w), y + (Δy * h))
             points = query_reference[..., :2] + offsets * query_reference[..., 2:]
         else:
             raise ValueError(f"Expected reference points/boxes, got {query_reference.shape=}")
 
-        # Normalize attention weights over the sampling points across all levels
-        attention_weights = self.attention_weights(query).view(batch_size, num_queries, self.num_heads, self.num_levels * self.num_points)
-        attention_weights = attention_weights.softmax(dim=-1)
+        # Convert sampling locations from [0, 1] to [-1, 1] for grid sampling
+        points = (points * 2) - 1
 
         # Project features to value space
         values = self.value_proj(features)
 
-        # Sample values
-        sampled_values = []
+        # Split values and points by level
         values = values.split([h * w for h, w in dimensions], dim=1)
-        points = points.permute(3, 0, 2, 1, 4, 5).flatten(0, 1)  # (num_levels, batch_size * num_heads, num_queries, num_points, 2)
+        points = points.permute(3, 0, 2, 1, 4, 5).flatten(1, 2)  # (num_levels, batch_size * num_heads, num_queries, num_points, 2)
+
+        # Sample values from each level
+        sampled_values = []
         for level_values, level_points, (h, w) in zip(values, points, dimensions):
             level_values = level_values.view(batch_size, h, w, self.num_heads, self.head_dim)
             level_values = level_values.permute(0, 3, 4, 1, 2).flatten(0, 1)  # (batch_size * num_heads, head_dim, height, width)
 
-            level_grid = (level_points * 2) - 1  # Convert from [0, 1] -> [-1, 1]
-
             sampled_level_values = F.grid_sample(
                 level_values,
-                level_grid,
+                level_points,
                 mode="bilinear",
                 padding_mode="zeros",
                 align_corners=False,
@@ -68,14 +72,61 @@ class MultiHeadDeformableAttention(nn.Module):
 
             sampled_values.append(sampled_level_values.view(batch_size, self.num_heads, self.head_dim, num_queries, self.num_points))
 
-        sampled_values = torch.cat(sampled_values, dim=-1)  # (batch_size, num_heads, head_dim, num_queries, num_levels * num_points)
+        sampled_values = torch.cat(sampled_values, dim=-1)
 
-        sampled_values = sampled_values * attention_weights
+        # Calculate attention weights (normalized over the points across all
+        attention_weights = self.attention_weights(queries).view(batch_size, num_queries, self.num_heads, self.num_levels * self.num_points)
+        attention_weights = attention_weights.softmax(dim=-1)
+        attention_weights = attention_weights.transpose(1, 2).unsqueeze(2)
 
-        # output = self.output_proj(output)
+        # Perform attention
+        output = (sampled_values * attention_weights).sum(dim=-1)
 
-        return None
+        # Restore original shape
+        output = output.view(batch_size, embed_dim, num_queries).transpose(1, 2)
+
+        # Output projection
+        output = self.output_proj(output)
+
+        return output
+
+    def _intialize_weights(self) -> None:
+        """
+        Initialize the weights of the deformable attention module.
+        """
+
+        # Initialize sampling offsets to form a circular grid around the reference points
+        nn.init.zeros_(self.sampling_offsets.weight.data)
+
+        # Assign a unique angle to each head and project onto the unit square
+        angles = torch.arange(self.num_heads) * (2 * torch.pi / self.num_heads)
+        points = torch.stack([torch.cos(angles), torch.sin(angles)], dim=-1)
+        points = points / points.abs().max(dim=-1, keepdim=True)[0]
+
+        # Repeat across levels and scale each point by its position in the sequence
+        points = points.view(self.num_heads, 1, 1, 2).repeat(1, self.num_levels, self.num_points, 1)
+        for i in range(self.num_points):
+            points[:, :, i, :] *= i + 1
+
+        self.sampling_offsets.bias.data.copy_(points.flatten())
+
+        # Initialize attention weights for uniform attention
+        nn.init.zeros_(self.attention_weights.weight.data)
+        nn.init.zeros_(self.attention_weights.bias.data)
+
+        # Initialize projections to maintain variance
+        nn.init.xavier_uniform_(self.value_proj.weight.data)
+        nn.init.zeros_(self.value_proj.bias.data)
+        nn.init.xavier_uniform_(self.output_proj.weight.data)
+        nn.init.zeros_(self.output_proj.bias.data)
+
+    @take_annotation_from(forward)
+    def __call__(self, *args, **kwargs):
+        return nn.Module.__call__(self, *args, **kwargs)
 
 
-class ProjectionType(Protocol):
+class LinearType(Protocol):
+    weight: Tensor
+    bias: Tensor
+
     def __call__(self, x: Tensor) -> Tensor: ...
