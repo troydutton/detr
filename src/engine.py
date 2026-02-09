@@ -11,11 +11,11 @@ from tqdm import tqdm
 
 from criterion import Criterion
 from evaluators import Evaluator
-from models import Model
+from models import DETR
 
 
 def train(
-    model: Model,
+    model: DETR,
     optimizer: Optimizer,
     scheduler: _LRScheduler,
     criterion: Criterion,
@@ -81,7 +81,7 @@ def train(
 
 
 def train_one_epoch(
-    model: Model,
+    model: DETR,
     optimizer: Optimizer,
     criterion: Criterion,
     scheduler: _LRScheduler,
@@ -138,7 +138,7 @@ def train_one_epoch(
 
 @torch.no_grad()
 def evaluate(
-    model: Model,
+    model: DETR,
     criterion: Criterion,
     evaluator: Evaluator,
     data: DataLoader,
