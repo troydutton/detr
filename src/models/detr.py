@@ -15,7 +15,7 @@ Predictions = Dict[str, Tensor]
 
 class DETR(nn.Module):
     """
-    Implementation of ["End-to-End Object Detection with Transformers"](https://arxiv.org/abs/2005.12872).
+    Implementation of Detection Transformers orginally introduced in [End-to-End Object Detection with Transformers](https://arxiv.org/abs/2005.12872).
 
     Args:
         embed_dim: Embedding dimension.

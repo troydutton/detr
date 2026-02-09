@@ -1,10 +1,10 @@
 import logging
 from typing import Any, Dict
 
-from models import Model
+from models import DETR
 
 
-def build_parameter_groups(model: Model, lr: float, lr_backbone: float) -> Dict[str, Any]:
+def build_parameter_groups(model: DETR, lr: float, lr_backbone: float) -> Dict[str, Any]:
     """
     Build parameter groups for the optimizer with a separate learning rate for the backbone.
 
@@ -35,9 +35,7 @@ def build_parameter_groups(model: Model, lr: float, lr_backbone: float) -> Dict[
 
     # Report number of parameters in millions
     num_params, num_backbone_params = num_params / 1e6, num_backbone_params / 1e6
-    logging.info(
-        f"Number of parameters is {num_params + num_backbone_params:.1f}M (default: {num_params:.1f}M, backbone: {num_backbone_params:.1f}M)."
-    )
+    logging.info(f"{num_params + num_backbone_params:.1f}M parameters (default: {num_params:.1f}M, backbone: {num_backbone_params:.1f}M).")
 
     # Create parameter groups
     param_groups = [
