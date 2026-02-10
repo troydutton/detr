@@ -126,15 +126,17 @@ class EncoderLayer(nn.Module):
 
 class DeformableEncoderLayer(nn.Module):
     """
-    Single layer of the transformer encoder.
+    Single deformable layer of the transformer encoder.
 
-    Consists of a self-attention layer followed by a feedforward network, both of which
-    use pre-layer normalization for gradient stability.
+    Consists of a deformable self-attention layer followed by a feedforward network,
+    both of which use pre-layer normalization for gradient stability.
 
     Args:
         embed_dim: Embedding dimension.
         ffn_dim: Feedforward network dimension.
         num_heads: Number of attention heads.
+        num_points: Number of sampling points.
+        num_levels: Number of feature levels.
         dropout: Dropout rate, optional.
     """
 
@@ -182,11 +184,13 @@ class DeformableEncoderLayer(nn.Module):
         assert features.embed.ndim == 3, f"Expected features of shape (batch_size, num_features, embed_dim), got {features.embed.shape=}"
 
         # Self-attention
+        v = self.norm1(features.embed)
+        q = v + features.pos
         features.embed = features.embed + self.dropout1(
             self.self_attention(
-                queries=features.embed,
+                queries=q,
                 query_reference=features.reference,
-                features=features.embed,
+                features=v,
                 dimensions=features.dimensions,
             )
         )

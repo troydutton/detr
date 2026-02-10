@@ -70,7 +70,6 @@ def main(args: DictConfig) -> None:
         collate_fn=collate_fn,
         pin_memory=True,
     )
-    logging.info(f"Train dataloader has {len(train_data):,} batches, validation dataloader has {len(val_data):,} batches.")
 
     # Create model (config/model/*.yaml)
     args["model"]["num_classes"] = train_dataset.num_classes

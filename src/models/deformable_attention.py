@@ -30,18 +30,19 @@ class MultiHeadDeformableAttention(nn.Module):
             queries: Query features with shape (batch_size, num_queries, embed_dim).
             query_reference: Reference points/boxes for the queries with shape (batch_size, num_queries, 2 or 4).
             features: Multi-level features with shape (batch_size, num_features, embed_dim).
-            dimensions: Height and width of each feature level with shape (num_levels, 2).
+            dimensions: Width and height of each feature level with shape (num_levels, 2).
         """
         batch_size, num_queries, embed_dim = queries.shape
 
         # Compute sampling locations: (x + (Δx * w), y + (Δy * h))
         query_reference = query_reference.view(batch_size, num_queries, 1, 1, 1, -1)
         offsets = self.sampling_offsets(queries).view(batch_size, num_queries, self.num_heads, self.num_levels, self.num_points, 2)
-        offsets = offsets / dimensions.view(1, 1, 1, self.num_levels, 1, 2)
 
         if query_reference.shape[-1] == 2:  # Points -> (x + Δx, y + Δy)
+            offsets = offsets / dimensions.view(1, 1, 1, self.num_levels, 1, 2)
             points = query_reference + offsets
         elif query_reference.shape[-1] == 4:  # Boxes -> (x + (Δx * w), y + (Δy * h))
+            offsets = offsets / (2 * self.num_points)
             points = query_reference[..., :2] + offsets * query_reference[..., 2:]
         else:
             raise ValueError(f"Expected reference points/boxes, got {query_reference.shape=}")
@@ -53,12 +54,12 @@ class MultiHeadDeformableAttention(nn.Module):
         values = self.value_proj(features)
 
         # Split values and points by level
-        values = values.split([h * w for h, w in dimensions], dim=1)
+        values = values.split([w * h for w, h in dimensions], dim=1)
         points = points.permute(3, 0, 2, 1, 4, 5).flatten(1, 2)  # (num_levels, batch_size * num_heads, num_queries, num_points, 2)
 
         # Sample values from each level
         sampled_values = []
-        for level_values, level_points, (h, w) in zip(values, points, dimensions):
+        for level_values, level_points, (w, h) in zip(values, points, dimensions):
             level_values = level_values.view(batch_size, h, w, self.num_heads, self.head_dim)
             level_values = level_values.permute(0, 3, 4, 1, 2).flatten(0, 1)  # (batch_size * num_heads, head_dim, height, width)
 

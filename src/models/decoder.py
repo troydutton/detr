@@ -5,6 +5,7 @@ from hydra.utils import instantiate
 from torch import Tensor, nn
 
 from models.backbone import Features
+from models.deformable_attention import MultiHeadDeformableAttention
 from models.layers import MultiLayerPerceptron
 from utils.misc import take_annotation_from
 
@@ -44,11 +45,12 @@ class TransformerDecoder(nn.Module):
 
         self.queries = nn.Embedding(num_queries, embed_dim)  # Learnable content for initializing object queries
         self.query_pos = nn.Embedding(num_queries, embed_dim)  # Learnable positional embeddings for object queries
-        # self.reference_head = nn.Linear(embed_dim, 2)  # Mapping from positional embeddings to reference points
+        self.reference_head = nn.Linear(embed_dim, 2)  # Mapping from positional embeddings to reference points
 
         self.layers = nn.ModuleList([instantiate(kwargs["layer"]) for _ in range(num_layers)])
-
         self.norm = nn.LayerNorm(embed_dim)
+
+        self._initialize_weights()
 
     def forward(self, features: Features) -> Tensor:
         """
@@ -93,17 +95,16 @@ class TransformerDecoder(nn.Module):
         """
 
         # Get batch information
-        batch_size, num_features, _ = features.embed.shape
+        batch_size, _, _ = features.embed.shape
 
         # Initialize the object queries
         query_embed = self.queries.weight.unsqueeze(0)
         query_pos = self.query_pos.weight.unsqueeze(0)
 
         # Calculate initial reference boxes
-        # xy = torch.sigmoid(self.reference_head(query_pos))
-        # wh = torch.full_like(xy, 0.1)
-        # query_ref = torch.cat([xy, wh], dim=-1)
-        query_ref = torch.zeros(1, num_features, 4, device=features.embed.device)
+        xy = torch.sigmoid(self.reference_head(query_pos))
+        wh = torch.full_like(xy, 0.1)
+        query_ref = torch.cat([xy, wh], dim=-1)
 
         # Expand the queries across the batch size
         query_embed = query_embed.expand(batch_size, -1, -1)
@@ -111,6 +112,12 @@ class TransformerDecoder(nn.Module):
         query_ref = query_ref.expand(batch_size, -1, -1)
 
         return Queries(embed=query_embed, pos=query_pos, reference=query_ref)
+
+    def _initialize_weights(self) -> None:
+        """Initialize the transformer decoder weights."""
+
+        nn.init.zeros_(self.reference_head.weight)
+        nn.init.zeros_(self.reference_head.bias)
 
     @take_annotation_from(forward)
     def __call__(self, *args, **kwargs):
@@ -193,6 +200,101 @@ class DecoderLayer(nn.Module):
         k = features.embed + features.pos
         v = features.embed
         queries.embed = queries.embed + self.dropout2(self.cross_attention(q, k, v, need_weights=False)[0])
+
+        # Feedforward Network
+        queries.embed = queries.embed + self.dropout3(self.ffn(self.norm3(queries.embed)))
+
+        return queries
+
+    @take_annotation_from(forward)
+    def __call__(self, *args, **kwargs):
+        return nn.Module.__call__(self, *args, **kwargs)
+
+
+class DeformableDecoderLayer(nn.Module):
+    """
+    Single layer of the transformer decoder.
+
+    Args:
+        embed_dim: Embedding dimension.
+        ffn_dim: Feedforward network dimension.
+        num_heads: Number of attention heads.
+        num_points: Number of sampling points.
+        num_levels: Number of feature levels.
+        dropout: Dropout rate, optional.
+    """
+
+    def __init__(
+        self,
+        embed_dim: int,
+        ffn_dim: int,
+        num_heads: int,
+        num_points: int,
+        num_levels: int,
+        dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+
+        # Self-attention
+        self.norm1 = nn.LayerNorm(embed_dim)
+        self.self_attention = nn.MultiheadAttention(
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True,
+        )
+        self.dropout1 = nn.Dropout(dropout)
+
+        # Deformable cross-attention
+        self.norm2 = nn.LayerNorm(embed_dim)
+        self.cross_attention = MultiHeadDeformableAttention(
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            num_levels=num_levels,
+            num_points=num_points,
+        )
+        self.dropout2 = nn.Dropout(dropout)
+
+        # Feedforward Network
+        self.norm3 = nn.LayerNorm(embed_dim)
+        self.ffn = MultiLayerPerceptron(
+            input_dim=embed_dim,
+            hidden_dim=ffn_dim,
+            output_dim=embed_dim,
+            num_layers=2,
+            dropout=dropout,
+        )
+        self.dropout3 = nn.Dropout(dropout)
+
+    def forward(self, queries: Queries, features: Features) -> Queries:
+        """
+        Forward pass for a single transformer decoder layer.
+
+        Args:
+            queries: Object queries with shape (batch_size, num_queries, embed_dim).
+            features: Multi-level features with shape (batch_size, num_features, embed_dim).
+
+        Returns:
+            queries: Object queries with the same shape as the input.
+        """
+
+        assert queries.embed.ndim == 3, f"Expected queries of shape (batch_size, num_queries, embed_dim), got {queries.embed.shape=}"
+        assert features.embed.ndim == 3, f"Expected features of shape (batch_size, num_features, embed_dim), got {features.embed.shape=}"
+
+        # Self-attention
+        v = self.norm1(queries.embed)
+        q = k = v + queries.pos
+        queries.embed = queries.embed + self.dropout1(self.self_attention(q, k, v, need_weights=False)[0])
+
+        # Cross-attention
+        queries.embed = queries.embed + self.dropout2(
+            self.cross_attention(
+                queries=self.norm2(queries.embed) + queries.pos,
+                query_reference=queries.reference,
+                features=features.embed,
+                dimensions=features.dimensions,
+            )
+        )
 
         # Feedforward Network
         queries.embed = queries.embed + self.dropout3(self.ffn(self.norm3(queries.embed)))

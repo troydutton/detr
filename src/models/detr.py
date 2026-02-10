@@ -67,13 +67,17 @@ class DETR(nn.Module):
         # Decode object queries
         query_embed, query_ref = self.decoder(features)
 
-        # Predict bounding boxes and class logits
-        predictions = {
-            "boxes": self.bbox_head(query_embed).sigmoid(),
-            "logits": self.class_head(query_embed),
-        }
+        # Predict bounding boxes
+        offsets = self.bbox_head(query_embed)
+        boxes = (query_ref.logit(1e-5) + offsets).sigmoid()
 
-        return predictions
+        # Predict class logits
+        logits = self.class_head(query_embed)
+
+        return {
+            "boxes": boxes,
+            "logits": logits,
+        }
 
     def _initialize_weights(self, pretrained_weights: str = None) -> None:
         # Check for BatchNorm layers
