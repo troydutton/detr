@@ -5,7 +5,7 @@ embed_dim: 256
 backbone:
   name: convnext_tiny
   embed_dim: ${model.embed_dim}
-  num_levels: 2
+  num_levels: 3
   pretrained: True
 
 encoder:
@@ -23,7 +23,7 @@ encoder:
 decoder:
   num_layers: 6
   embed_dim: ${model.embed_dim}
-  num_queries: 100
+  num_queries: 300
   return_intermediates: True
   layer:
     _target_: models.decoder.DeformableDecoderLayer

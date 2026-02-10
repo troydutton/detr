@@ -3,15 +3,15 @@ defaults:
   - dataset: coco
   - transforms: nano
   - model: ddetr
-  - optimizer: adamw
-  - scheduler: step
+  - optimizer: ddetr 
+  - scheduler: ddetr
   - criterion: detr
   - _self_
 
 train:
   output_dir: /data/troy/models/ddetr/ddetr-nano
-  num_epochs: 300
-  batch_size: 128
+  num_epochs: 50 
+  batch_size: 32
   num_workers: 6
   save_period: 10
   max_grad_norm: 0.1
