@@ -25,7 +25,9 @@ def build_parameter_groups(
         param_groups: Parameter groups for the optimizer.
     """
 
-    logging.info(f"Building parameter groups with {lr=:.1e}, {lr_backbone=:.1e}, {lr_projection=:.1e}.")
+    logging.info(
+        f"Building parameter groups with {lr=:.1e}, {lr_backbone=:.1e}{'' if lr_projection is None else f', {lr_projection=:.1e}'}."
+    )
 
     # Separate out backbone parameters
     params, backbone_params, projection_params = [], [], []
