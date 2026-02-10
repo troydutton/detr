@@ -16,8 +16,8 @@ encoder:
     embed_dim: ${model.embed_dim}
     ffn_dim: 2048
     num_heads: 8
+    num_points: 4
     num_levels: ${model.backbone.num_levels}
-    num_points: 5
     dropout: 0.1
 
 decoder:
@@ -26,8 +26,10 @@ decoder:
   num_queries: 100
   return_intermediates: True
   layer:
-    _target_: models.decoder.DecoderLayer
+    _target_: models.decoder.DeformableDecoderLayer
     embed_dim: ${model.embed_dim}
     ffn_dim: ${model.encoder.layer.ffn_dim}
     num_heads: ${model.encoder.layer.num_heads}
+    num_points: ${model.encoder.layer.num_points}
+    num_levels: ${model.encoder.layer.num_levels}
     dropout: ${model.encoder.layer.dropout}

@@ -70,7 +70,7 @@ class Backbone(nn.Module):
             - `features`: Embeddings with shape (batch_size, num_features, embed_dim).
             - `pos`: Positional embeddings with shape (batch_size, num_features, embed_dim).
             - `reference`: Reference points for the features with shape (batch_size, num_features, 2).
-            - `dimensions`: Height and width of each feature level with shape (num_levels, 2).
+            - `dimensions`: Width and height of each feature level with shape (num_levels, 2).
         """
 
         # Get batch information
@@ -106,7 +106,7 @@ class Backbone(nn.Module):
             multi_level_features.append(features)
             multi_level_pos.append(feature_pos)
             multi_level_reference.append(feature_reference)
-            dimensions.append((height, width))
+            dimensions.append((width, height))
 
         # Concatenate features from all levels
         multi_level_features = torch.cat(multi_level_features, dim=1)
