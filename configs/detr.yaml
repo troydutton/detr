@@ -3,8 +3,8 @@ defaults:
   - dataset: coco
   - transforms: nano
   - model: detr 
-  - optimizer: adamw
-  - scheduler: step
+  - optimizer: detr 
+  - scheduler: detr 
   - criterion: detr
   - _self_
 
