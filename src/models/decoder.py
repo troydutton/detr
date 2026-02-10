@@ -45,7 +45,7 @@ class TransformerDecoder(nn.Module):
 
         self.queries = nn.Embedding(num_queries, embed_dim)  # Learnable content for initializing object queries
         self.query_pos = nn.Embedding(num_queries, embed_dim)  # Learnable positional embeddings for object queries
-        self.reference_head = nn.Linear(embed_dim, 2)  # Mapping from positional embeddings to reference points
+        self.reference_points = nn.Linear(embed_dim, 2)  # Head for initial query reference points
 
         self.layers = nn.ModuleList([instantiate(kwargs["layer"]) for _ in range(num_layers)])
         self.norm = nn.LayerNorm(embed_dim)
@@ -102,7 +102,7 @@ class TransformerDecoder(nn.Module):
         query_pos = self.query_pos.weight.unsqueeze(0)
 
         # Calculate initial reference boxes
-        xy = torch.sigmoid(self.reference_head(query_pos))
+        xy = torch.sigmoid(self.reference_points(query_pos))
         wh = torch.full_like(xy, 0.1)
         query_ref = torch.cat([xy, wh], dim=-1)
 
@@ -116,8 +116,8 @@ class TransformerDecoder(nn.Module):
     def _initialize_weights(self) -> None:
         """Initialize the transformer decoder weights."""
 
-        nn.init.zeros_(self.reference_head.weight)
-        nn.init.zeros_(self.reference_head.bias)
+        nn.init.zeros_(self.reference_points.weight)
+        nn.init.zeros_(self.reference_points.bias)
 
     @take_annotation_from(forward)
     def __call__(self, *args, **kwargs):
