@@ -22,7 +22,7 @@ class MultiHeadDeformableAttention(nn.Module):
         self.value_proj: LinearType = nn.Linear(embed_dim, embed_dim)
         self.output_proj: LinearType = nn.Linear(embed_dim, embed_dim)
 
-        self._intialize_weights()
+        self._initialize_weights()
 
     def forward(self, queries: Tensor, query_reference: Tensor, features: Tensor, dimensions: Tensor) -> Tensor:
         """
@@ -91,13 +91,14 @@ class MultiHeadDeformableAttention(nn.Module):
 
         return output
 
-    def _intialize_weights(self) -> None:
+    @torch.no_grad()
+    def _initialize_weights(self) -> None:
         """
         Initialize the weights of the deformable attention module.
         """
 
         # Initialize sampling offsets to form a circular grid around the reference points
-        nn.init.zeros_(self.sampling_offsets.weight.data)
+        nn.init.zeros_(self.sampling_offsets.weight)
 
         # Assign a unique angle to each head and project onto the unit square
         angles = torch.arange(self.num_heads) * (2 * torch.pi / self.num_heads)
@@ -109,17 +110,17 @@ class MultiHeadDeformableAttention(nn.Module):
         for i in range(self.num_points):
             points[:, :, i, :] *= i + 1
 
-        self.sampling_offsets.bias.data.copy_(points.flatten())
+        self.sampling_offsets.bias.copy_(points.flatten())
 
         # Initialize attention weights for uniform attention
-        nn.init.zeros_(self.attention_weights.weight.data)
-        nn.init.zeros_(self.attention_weights.bias.data)
+        nn.init.zeros_(self.attention_weights.weight)
+        nn.init.zeros_(self.attention_weights.bias)
 
         # Initialize projections to maintain variance
-        nn.init.xavier_uniform_(self.value_proj.weight.data)
-        nn.init.zeros_(self.value_proj.bias.data)
-        nn.init.xavier_uniform_(self.output_proj.weight.data)
-        nn.init.zeros_(self.output_proj.bias.data)
+        nn.init.xavier_uniform_(self.value_proj.weight)
+        nn.init.zeros_(self.value_proj.bias)
+        nn.init.xavier_uniform_(self.output_proj.weight)
+        nn.init.zeros_(self.output_proj.bias)
 
     @take_annotation_from(forward)
     def __call__(self, *args, **kwargs):

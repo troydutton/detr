@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 import torch
 from hydra.utils import instantiate
@@ -36,16 +37,26 @@ class TransformerDecoder(nn.Module):
         num_layers: int,
         embed_dim: int,
         num_queries: int,
+        *,
         return_intermediates: bool = True,
+        bbox_head: Optional[MultiLayerPerceptron] = None,
+        class_head: Optional[nn.Linear] = None,
+        two_stage: bool = False,
         **kwargs,
     ) -> None:
         super().__init__()
 
+        self.num_queries = num_queries
         self.return_intermediates = return_intermediates
+        self.two_stage = two_stage
 
-        self.queries = nn.Embedding(num_queries, embed_dim)  # Learnable content for initializing object queries
-        self.query_pos = nn.Embedding(num_queries, embed_dim)  # Learnable positional embeddings for object queries
-        self.reference_points = nn.Linear(embed_dim, 2)  # Head for initial query reference points
+        if self.two_stage:
+            self.bbox_head = bbox_head
+            self.class_head = class_head
+        else:
+            self.queries = nn.Embedding(num_queries, embed_dim)  # Learnable content for object queries
+            self.query_pos = nn.Embedding(num_queries, embed_dim)  # Learnable positional embeddings for object queries
+            self.reference_points = nn.Linear(embed_dim, 2)  # Head for initial query reference points
 
         self.layers = nn.ModuleList([instantiate(kwargs["layer"]) for _ in range(num_layers)])
         self.norm = nn.LayerNorm(embed_dim)
@@ -97,27 +108,45 @@ class TransformerDecoder(nn.Module):
         # Get batch information
         batch_size, _, _ = features.embed.shape
 
-        # Initialize the object queries
-        query_embed = self.queries.weight.unsqueeze(0)
-        query_pos = self.query_pos.weight.unsqueeze(0)
+        if self.two_stage:
+            scores = torch.sigmoid(self.class_head(features.embed)).max(dim=-1).values
 
-        # Calculate initial reference boxes
-        xy = torch.sigmoid(self.reference_points(query_pos))
-        wh = torch.full_like(xy, 0.1)
-        query_ref = torch.cat([xy, wh], dim=-1)
+            # Select top-k queries based on the class scores
+            topk_indices = scores.topk(self.num_queries, dim=1).indices
 
-        # Expand the queries across the batch size
-        query_embed = query_embed.expand(batch_size, -1, -1)
-        query_pos = query_pos.expand(batch_size, -1, -1)
-        query_ref = query_ref.expand(batch_size, -1, -1)
+            # Gather the corresponding query embeddings and positional encodings
+            topk_indices = topk_indices.unsqueeze(-1).expand(-1, -1, features.embed.size(-1))
+            query_embed = torch.gather(features.embed, dim=1, index=topk_indices)
+            query_pos = torch.gather(features.pos, dim=1, index=topk_indices)
+            query_ref = torch.gather(features.reference, dim=1, index=topk_indices)
+
+            # TODO: Continue here
+            # Refine the references
+            _ = self.bbox_head(query_embed)
+        else:
+            # Initialize the object queries
+            query_embed = self.queries.weight.unsqueeze(0)
+            query_pos = self.query_pos.weight.unsqueeze(0)
+
+            # Calculate initial reference boxes
+            xy = torch.sigmoid(self.reference_points(query_pos))
+            wh = torch.full_like(xy, 0.1)
+            query_ref = torch.cat([xy, wh], dim=-1)
+
+            # Expand the queries across the batch size
+            query_embed = query_embed.expand(batch_size, -1, -1)
+            query_pos = query_pos.expand(batch_size, -1, -1)
+            query_ref = query_ref.expand(batch_size, -1, -1)
 
         return Queries(embed=query_embed, pos=query_pos, reference=query_ref)
 
+    @torch.no_grad()
     def _initialize_weights(self) -> None:
         """Initialize the transformer decoder weights."""
 
-        nn.init.zeros_(self.reference_points.weight)
-        nn.init.zeros_(self.reference_points.bias)
+        if not self.two_stage:
+            nn.init.xavier_uniform_(self.reference_points.weight, gain=1.0)
+            nn.init.zeros_(self.reference_points.bias)
 
     @take_annotation_from(forward)
     def __call__(self, *args, **kwargs):
