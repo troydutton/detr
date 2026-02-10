@@ -76,8 +76,10 @@ def main(args: DictConfig) -> None:
     model = DETR(**args["model"])
 
     # Create optimizer (config/optimizer/*.yaml)
-    lr, lr_backbone = args["optimizer"]["lr"], args["optimizer"].pop("lr_backbone")
-    args["optimizer"]["params"] = build_parameter_groups(model, lr=lr, lr_backbone=lr_backbone)
+    lr = args["optimizer"]["lr"]
+    lr_backbone = args["optimizer"].pop("lr_backbone")
+    lr_projection = args["optimizer"].pop("lr_projection", None)
+    args["optimizer"]["params"] = build_parameter_groups(model, lr=lr, lr_backbone=lr_backbone, lr_projection=lr_projection)
     optimizer: Optimizer = instantiate(args["optimizer"], _convert_="all")
 
     # Create learning rate scheduler (config/scheduler/*.yaml)
