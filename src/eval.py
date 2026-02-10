@@ -11,12 +11,12 @@ from criterion import Criterion
 from data import CocoDataset, collate_fn
 from engine import evaluate
 from evaluators import CocoEvaluator
-from models import Model
+from models import DETR
 
 Args = Dict[str, Union[Any, "Args"]]
 
 
-@hydra.main(config_path="../configs", config_name="config", version_base=None)
+@hydra.main(config_path="../configs", config_name="detr", version_base=None)
 def main(args: DictConfig) -> None:
     # Distributed setup
     accelerator = Accelerator()
@@ -47,7 +47,8 @@ def main(args: DictConfig) -> None:
 
     # Create model (config/model/*.yaml)
     args["model"]["pretrained_weights"] = checkpoint
-    model: Model = instantiate(args["model"], num_classes=val_dataset.num_classes)
+    args["model"]["num_classes"] = val_dataset.num_classes
+    model = DETR(**args["model"])
 
     # Distribute evaluation components
     model, val_data = accelerator.prepare(model, val_data)

@@ -1,5 +1,6 @@
 from math import sqrt
 
+import torch
 from torch import Tensor, nn
 
 from utils.misc import take_annotation_from
@@ -61,6 +62,7 @@ class MultiLayerPerceptron(nn.Module):
     def __call__(self, *args, **kwargs):
         return nn.Module.__call__(self, *args, **kwargs)
 
+    @torch.no_grad()
     def _initialize_weights(self) -> None:
         """
         Initialize the weights of the multi-layer perceptron.
@@ -69,8 +71,8 @@ class MultiLayerPerceptron(nn.Module):
         # Weights in hidden layers get initialized uniformly to preserve variance
         for m in self.modules():
             if isinstance(m, nn.Linear):
-                nn.init.kaiming_uniform_(m.weight.data, a=sqrt(5))
-                nn.init.zeros_(m.bias.data)
+                nn.init.kaiming_uniform_(m.weight, a=sqrt(5))
+                nn.init.zeros_(m.bias)
 
         # The last layer is initialized to zero to prevent any initial bias
-        nn.init.zeros_(self.mlp[-1].weight.data)
+        nn.init.zeros_(self.mlp[-1].weight)

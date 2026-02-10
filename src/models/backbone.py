@@ -56,6 +56,8 @@ class Backbone(nn.Module):
         # Per-level positional embeddings
         self.level_pos = nn.Embedding(num_levels, embed_dim)
 
+        self._initialize_weights()
+
         # Optimize memory format to align with DDP bucket views
         self.backbone.to(memory_format=torch.channels_last)
         self.projections.to(memory_format=torch.channels_last)
@@ -120,6 +122,15 @@ class Backbone(nn.Module):
             reference=multi_level_reference,
             dimensions=dimensions,
         )
+
+    @torch.no_grad()
+    def _initialize_weights(self) -> None:
+        """Initialize the backbone weights."""
+
+        # Initialize projection weights to maintain variance
+        for projection in self.projections:
+            nn.init.xavier_uniform_(projection.weight)
+            nn.init.zeros_(projection.bias)
 
     @take_annotation_from(forward)
     def __call__(self, *args, **kwargs):
