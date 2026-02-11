@@ -8,7 +8,7 @@ from torch import Tensor, nn
 from models.backbone import Backbone
 from models.decoder import TransformerDecoder
 from models.encoder import TransformerEncoder
-from models.layers import MultiLayerPerceptron
+from models.layers import FFN
 
 Predictions = Dict[str, Tensor]
 
@@ -22,33 +22,34 @@ class DETR(nn.Module):
         num_classes: Number of object classes.
         pretrained_weights: Path to a pretrained weights file.
         kwargs: Arguments to construct the backbone and transformer.
-            See `models.backbone.Backbone` and `models.transformer.Transformer`.
+            See `models.backbone.Backbone`, `models.encoder.TransformerEncoder`, and `models.decoder.TransformerDecoder`.
     """
 
-    def __init__(self, embed_dim: int, num_classes: int, pretrained_weights: str = None, **kwargs) -> None:
+    def __init__(
+        self,
+        embed_dim: int,
+        num_classes: int,
+        pretrained_weights: str = None,
+        **kwargs,
+    ) -> None:
         super().__init__()
 
         self.num_classes = num_classes
 
-        # Create & initialize the bounding box and classification heads
-        self.bbox_head = MultiLayerPerceptron(
-            input_dim=embed_dim,
-            hidden_dim=embed_dim,
-            output_dim=4,
-            num_layers=3,
-        )
-        self.class_head = nn.Linear(embed_dim, num_classes)
-
         # Build the backbone, transformer encoder, and transformer decoder
         self.backbone = Backbone(**kwargs["backbone"])
-        self.encoder = TransformerEncoder(**kwargs["encoder"])
+        self.encoder = TransformerEncoder(**kwargs["encoder"], num_classes=num_classes)
         self.decoder = TransformerDecoder(**kwargs["decoder"])
+
+        # Create the bounding box and classification heads
+        self.bbox_head = FFN(embed_dim, embed_dim, 4, 3)
+        self.class_head = nn.Linear(embed_dim, num_classes)
 
         self._initialize_weights(pretrained_weights=pretrained_weights)
 
     def forward(self, images: Tensor) -> Predictions:
         """
-        Predict
+        Predict bounding boxes and class logits for a batch of input images.
 
         Args:
             images: A batch of images with shape (batch, channels, height, width).
@@ -62,10 +63,10 @@ class DETR(nn.Module):
         features = self.backbone(images)
 
         # Encode the features
-        features = self.encoder(features)
+        features, queries = self.encoder(features)
 
         # Decode object queries
-        query_embed, query_ref = self.decoder(features)
+        query_embed, query_ref = self.decoder(features, queries)
 
         # Predict bounding boxes
         offsets = self.bbox_head(query_embed)
@@ -79,6 +80,7 @@ class DETR(nn.Module):
             "logits": logits,
         }
 
+    @torch.no_grad()
     def _initialize_weights(self, pretrained_weights: str = None) -> None:
         # Check for BatchNorm layers
         for module_name, module in self.backbone.named_modules():
@@ -88,7 +90,7 @@ class DETR(nn.Module):
         # We bias the classifier to predict a small probability for objects
         # because the majority of queries are not matched to objects
         bias = -math.log((1 - (object_prob := 0.01)) / object_prob)
-        self.class_head.bias.data = torch.ones(self.num_classes) * bias
+        nn.init.constant_(self.class_head.bias, bias)
 
         if pretrained_weights is None:
             return

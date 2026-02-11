@@ -7,7 +7,7 @@ from torch import Tensor, nn
 
 from models.backbone import Features
 from models.deformable_attention import MultiHeadDeformableAttention
-from models.layers import MultiLayerPerceptron
+from models.layers import FFN
 from utils.misc import take_annotation_from
 
 
@@ -26,6 +26,7 @@ class TransformerDecoder(nn.Module):
         num_layers: Number of decoder layers.
         embed_dim: Embedding dimension.
         num_queries: Number of object queries.
+        two_stage: Initialize object queries using encoder proposals or learned parameters, optional.
         return_intermediates: Whether to return intermediate transformer outputs, optional.
         kwargs: Arguments to construct the decoder layers.
             See `models.decoder.DecoderLayer` or `models.decoder.DeformableDecoderLayer`.
@@ -38,10 +39,8 @@ class TransformerDecoder(nn.Module):
         embed_dim: int,
         num_queries: int,
         *,
-        return_intermediates: bool = True,
-        bbox_head: Optional[MultiLayerPerceptron] = None,
-        class_head: Optional[nn.Linear] = None,
         two_stage: bool = False,
+        return_intermediates: bool = True,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -50,33 +49,34 @@ class TransformerDecoder(nn.Module):
         self.return_intermediates = return_intermediates
         self.two_stage = two_stage
 
-        if self.two_stage:
-            self.bbox_head = bbox_head
-            self.class_head = class_head
-        else:
-            self.queries = nn.Embedding(num_queries, embed_dim)  # Learnable content for object queries
-            self.query_pos = nn.Embedding(num_queries, embed_dim)  # Learnable positional embeddings for object queries
-            self.reference_points = nn.Linear(embed_dim, 2)  # Head for initial query reference points
+        # In single-stage, we initialize the object queries as image-agnostic learned parameters
+        if not self.two_stage:
+            self.queries = nn.Embedding(num_queries, embed_dim)  # Learnable content
+            self.query_pos = nn.Embedding(num_queries, embed_dim)  # Learnable positional embeddings
+            self.reference_points = nn.Linear(embed_dim, 2)  # Mapping from positional embeddings to reference points
 
         self.layers = nn.ModuleList([instantiate(kwargs["layer"]) for _ in range(num_layers)])
         self.norm = nn.LayerNorm(embed_dim)
 
         self._initialize_weights()
 
-    def forward(self, features: Features) -> Tensor:
+    def forward(self, features: Features, queries: Optional[Queries] = None) -> Tensor:
         """
         Forward pass for the transformer decoder.
 
         Args:
             features: Multi-level features with shape (batch_size, num_features, embed_dim).
+            queries: Initial object query proposals with shape (batch_size, num_queries, embed_dim).
 
         Returns:
             query_embed: Query embeddings with shape (batch_size, num_layers, num_queries, embed_dim).
-            query_ref: Query reference boxes with shape (batch_size, num_layers, num_queries, 4).
+            #### query_ref
+            Query reference boxes with shape (batch_size, num_layers, num_queries, 4).
         """
 
-        # Initialize the object queries
-        queries = self._intialize_object_queries(features)
+        # In single-stage, we initialize the object queries as image-agnostic learned parameters
+        if not self.two_stage:
+            queries = self._initialize_object_queries(features)
 
         # Iteratively decode the object queries
         query_embed, query_ref = [], []
@@ -94,7 +94,7 @@ class TransformerDecoder(nn.Module):
 
         return query_embed, query_ref
 
-    def _intialize_object_queries(self, features: Features) -> Queries:
+    def _initialize_object_queries(self, features: Features) -> Queries:
         """
         Initializes the object queries for the transformer decoder.
 
@@ -108,35 +108,20 @@ class TransformerDecoder(nn.Module):
         # Get batch information
         batch_size, _, _ = features.embed.shape
 
-        if self.two_stage:
-            scores = torch.sigmoid(self.class_head(features.embed)).max(dim=-1).values
+        # Learned object queries and positional embeddings
+        query_embed = self.queries.weight.unsqueeze(0)
+        query_pos = self.query_pos.weight.unsqueeze(0)
 
-            # Select top-k queries based on the class scores
-            topk_indices = scores.topk(self.num_queries, dim=1).indices
+        # The reference boxes use a learned mapping from the positional embeddings
+        # as the center point and a fixed width and height
+        xy = torch.sigmoid(self.reference_points(query_pos))
+        wh = torch.full_like(xy, 0.1)
+        query_ref = torch.cat([xy, wh], dim=-1)
 
-            # Gather the corresponding query embeddings and positional encodings
-            topk_indices = topk_indices.unsqueeze(-1).expand(-1, -1, features.embed.size(-1))
-            query_embed = torch.gather(features.embed, dim=1, index=topk_indices)
-            query_pos = torch.gather(features.pos, dim=1, index=topk_indices)
-            query_ref = torch.gather(features.reference, dim=1, index=topk_indices)
-
-            # TODO: Continue here
-            # Refine the references
-            _ = self.bbox_head(query_embed)
-        else:
-            # Initialize the object queries
-            query_embed = self.queries.weight.unsqueeze(0)
-            query_pos = self.query_pos.weight.unsqueeze(0)
-
-            # Calculate initial reference boxes
-            xy = torch.sigmoid(self.reference_points(query_pos))
-            wh = torch.full_like(xy, 0.1)
-            query_ref = torch.cat([xy, wh], dim=-1)
-
-            # Expand the queries across the batch size
-            query_embed = query_embed.expand(batch_size, -1, -1)
-            query_pos = query_pos.expand(batch_size, -1, -1)
-            query_ref = query_ref.expand(batch_size, -1, -1)
+        # Expand the queries across the batch size
+        query_embed = query_embed.expand(batch_size, -1, -1)
+        query_pos = query_pos.expand(batch_size, -1, -1)
+        query_ref = query_ref.expand(batch_size, -1, -1)
 
         return Queries(embed=query_embed, pos=query_pos, reference=query_ref)
 
@@ -195,13 +180,7 @@ class DecoderLayer(nn.Module):
 
         # Feedforward Network
         self.norm3 = nn.LayerNorm(embed_dim)
-        self.ffn = MultiLayerPerceptron(
-            input_dim=embed_dim,
-            hidden_dim=ffn_dim,
-            output_dim=embed_dim,
-            num_layers=2,
-            dropout=dropout,
-        )
+        self.ffn = FFN(embed_dim, ffn_dim, embed_dim, 2, dropout=dropout)
         self.dropout3 = nn.Dropout(dropout)
 
     def forward(self, queries: Queries, features: Features) -> Queries:
@@ -286,13 +265,7 @@ class DeformableDecoderLayer(nn.Module):
 
         # Feedforward Network
         self.norm3 = nn.LayerNorm(embed_dim)
-        self.ffn = MultiLayerPerceptron(
-            input_dim=embed_dim,
-            hidden_dim=ffn_dim,
-            output_dim=embed_dim,
-            num_layers=2,
-            dropout=dropout,
-        )
+        self.ffn = FFN(embed_dim, ffn_dim, embed_dim, 2, dropout=dropout)
         self.dropout3 = nn.Dropout(dropout)
 
     def forward(self, queries: Queries, features: Features) -> Queries:
