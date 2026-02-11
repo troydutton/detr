@@ -6,7 +6,7 @@ from torch import Tensor, nn
 from utils.misc import take_annotation_from
 
 
-class MultiLayerPerceptron(nn.Module):
+class FFN(nn.Module):
     """
     Multi-layer perceptron or feedforward network.
 
@@ -23,8 +23,8 @@ class MultiLayerPerceptron(nn.Module):
         self,
         input_dim: int,
         hidden_dim: int,
-        num_layers: int,
         output_dim: int,
+        num_layers: int,
         dropout: float = 0.0,
         activation: nn.Module = nn.ReLU,
     ) -> None:
