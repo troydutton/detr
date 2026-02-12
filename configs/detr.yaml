@@ -9,10 +9,10 @@ defaults:
   - _self_
 
 train:
-  output_dir: /data/troy/models/detr/detr-nano
-  num_epochs: 1200
-  batch_size: 32
-  num_workers: 6
+  output_dir: /work/09889/troydutton/vista/models/detr-nano
+  num_epochs: 500
+  batch_size: 64
+  num_workers: 4
   save_period: 10
   max_grad_norm: 0.1
   checkpoint: Null

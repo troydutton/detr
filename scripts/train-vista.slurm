@@ -2,8 +2,8 @@
 #SBATCH -J detr
 #SBATCH -N 4
 #SBATCH --ntasks-per-node=1
-#SBATCH -p gh-dev
-#SBATCH -t 01:00:00
+#SBATCH -p gh
+#SBATCH -t 48:00:00
 #SBATCH -o /work/09889/troydutton/vista/out/detr/detr-%j
 #SBATCH -A OTH25007
 
@@ -18,6 +18,7 @@ if [[ "$1" == "--worker" ]]; then
 	# Distributed variables
 	RANK=$SLURM_PROCID
 	WORLD_SIZE=$SLURM_NNODES
+	export $OMP_NUM_THREADS=64
 
 	echo "$((RANK + 1))/$WORLD_SIZE connecting to $MASTER_ADDR:$MASTER_PORT."
 
@@ -28,7 +29,6 @@ if [[ "$1" == "--worker" ]]; then
 		--machine_rank=$RANK \
 		--main_process_ip=$MASTER_ADDR \
 		--main_process_port=$MASTER_PORT \
-		--enable_cpu_affinity \
 		--mixed_precision bf16 \
 		--rdzv_backend static \
 		src/train.py
