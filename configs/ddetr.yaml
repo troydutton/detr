@@ -5,13 +5,13 @@ defaults:
   - model: ddetr
   - optimizer: ddetr 
   - scheduler: ddetr
-  - criterion: detr
+  - criterion: ddetr
   - _self_
 
 train:
   output_dir: /data/troy/models/ddetr/ddetr-nano
   num_epochs: 50 
-  batch_size: 2
+  batch_size: 32
   num_workers: 6
   save_period: 10
   max_grad_norm: 0.1
