@@ -1,5 +1,4 @@
 import logging
-import math
 from typing import Dict
 
 import torch
@@ -8,7 +7,6 @@ from torch import Tensor, nn
 from models.backbone import Backbone
 from models.decoder import TransformerDecoder
 from models.encoder import TransformerEncoder
-from models.layers import FFN
 
 Predictions = Dict[str, Tensor]
 
@@ -25,25 +23,15 @@ class DETR(nn.Module):
             See `models.backbone.Backbone`, `models.encoder.TransformerEncoder`, and `models.decoder.TransformerDecoder`.
     """
 
-    def __init__(
-        self,
-        embed_dim: int,
-        num_classes: int,
-        pretrained_weights: str = None,
-        **kwargs,
-    ) -> None:
+    def __init__(self, num_classes: int, pretrained_weights: str = None, **kwargs) -> None:
         super().__init__()
 
         self.num_classes = num_classes
 
         # Build the backbone, transformer encoder, and transformer decoder
         self.backbone = Backbone(**kwargs["backbone"])
-        self.encoder = TransformerEncoder(**kwargs["encoder"], num_classes=num_classes)
-        self.decoder = TransformerDecoder(**kwargs["decoder"])
-
-        # Create the bounding box and classification heads
-        self.bbox_head = FFN(embed_dim, embed_dim, 4, 3)
-        self.class_head = nn.Linear(embed_dim, num_classes)
+        self.encoder = TransformerEncoder(**kwargs["encoder"])
+        self.decoder = TransformerDecoder(**kwargs["decoder"], num_classes=num_classes)
 
         self._initialize_weights(pretrained_weights=pretrained_weights)
 
@@ -56,24 +44,17 @@ class DETR(nn.Module):
             return_intermediates: Whether to return intermediate transformer outputs.
 
         Returns:
-            predictions: A dictionary containing normalized CXCYWH `boxes` and raw class `logits`.
+            predictions: A dictionary containing normalized CXCYWH `boxes` and class `logits`.
         """
 
         # Extract image features
         features = self.backbone(images)
 
         # Encode the features
-        features, queries = self.encoder(features)
+        features = self.encoder(features)
 
-        # Decode object queries
-        query_embed, query_ref = self.decoder(features, queries)
-
-        # Predict bounding boxes
-        offsets = self.bbox_head(query_embed)
-        boxes = (query_ref.logit(1e-5) + offsets).sigmoid()
-
-        # Predict class logits
-        logits = self.class_head(query_embed)
+        # Decode the features into object predictions
+        boxes, logits = self.decoder(features)
 
         return {
             "boxes": boxes,
@@ -86,11 +67,6 @@ class DETR(nn.Module):
         for module_name, module in self.backbone.named_modules():
             if isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
                 logging.warning(f"Backbone contains BatchNorm layer: {module_name}")
-
-        # We bias the classifier to predict a small probability for objects
-        # because the majority of queries are not matched to objects
-        bias = -math.log((1 - (object_prob := 0.01)) / object_prob)
-        nn.init.constant_(self.class_head.bias, bias)
 
         if pretrained_weights is None:
             return

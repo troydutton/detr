@@ -1,11 +1,16 @@
 pretrained_weights: Null
 
+num_queries: 100
 embed_dim: 256
+ffn_dim: 2048
+num_heads: 8
+num_levels: 1
+dropout: 0.1
 
 backbone:
   name: convnext_tiny
   embed_dim: ${model.embed_dim}
-  num_levels: 1
+  num_levels: ${model.num_levels}
   pretrained: True
 
 encoder:
@@ -14,18 +19,19 @@ encoder:
   layer:
     _target_: models.encoder.EncoderLayer
     embed_dim: ${model.embed_dim}
-    ffn_dim: 2048
-    num_heads: 8
-    dropout: 0.1
+    ffn_dim: ${model.ffn_dim}
+    num_heads: ${model.num_heads}
+    dropout: ${model.dropout}
 
 decoder:
   num_layers: 6
-  embed_dim: ${model.embed_dim}
-  num_queries: 100
+  two_stage: False 
   return_intermediates: True
+  num_queries: ${model.num_queries} 
+  embed_dim: ${model.embed_dim}
   layer:
     _target_: models.decoder.DecoderLayer
     embed_dim: ${model.embed_dim}
-    ffn_dim: ${model.encoder.layer.ffn_dim}
-    num_heads: ${model.encoder.layer.num_heads}
-    dropout: ${model.encoder.layer.dropout}
+    ffn_dim: ${model.ffn_dim}
+    num_heads: ${model.num_heads}
+    dropout: ${model.dropout}

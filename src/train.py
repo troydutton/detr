@@ -90,9 +90,10 @@ def main(args: DictConfig) -> None:
     model, optimizer, train_data, val_data, scheduler = accelerator.prepare(model, optimizer, train_data, val_data, scheduler)
 
     # Create criterion (config/criterion/*.yaml)
-    class_weights = train_dataset.calculate_class_weights(beta=args["criterion"].pop("beta"))
-    class_weights = class_weights.to(accelerator.device)
-    criterion: Criterion = instantiate(args["criterion"], class_weights=class_weights)
+    args["criterion"].pop("beta")
+    # class_weights = train_dataset.calculate_class_weights(beta=args["criterion"].pop("beta"))
+    # class_weights = class_weights.to(accelerator.device)
+    criterion: Criterion = instantiate(args["criterion"])
 
     # Create evaluator
     evaluator: CocoEvaluator = CocoEvaluator(coco_targets=val_dataset.coco)
