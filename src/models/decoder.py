@@ -29,6 +29,7 @@ class TransformerDecoder(nn.Module):
         embed_dim: Embedding dimension.
         num_queries: Number of object queries.
         two_stage: Initialize object queries using encoder proposals or learned parameters, optional.
+        refine_boxes: Whether to iteratively refine the reference boxes across decoder layers, optional.
         num_classes: Number of object classes, required if `two_stage` is True.
         return_intermediates: Whether to return intermediate transformer outputs, optional.
         kwargs: Arguments to construct the decoder layers.
@@ -43,6 +44,7 @@ class TransformerDecoder(nn.Module):
         num_queries: int,
         *,
         two_stage: bool = False,
+        refine_boxes: bool = False,
         num_classes: Optional[int] = None,
         return_intermediates: bool = True,
         **kwargs,
@@ -53,11 +55,16 @@ class TransformerDecoder(nn.Module):
 
         self.num_queries = num_queries
         self.two_stage = two_stage
+        self.refine_boxes = refine_boxes
         self.num_classes = num_classes
         self.return_intermediates = return_intermediates
 
         # Create the bounding box and classification heads
-        self.bbox_head = FFN(embed_dim, embed_dim, 4, 3)
+        if self.refine_boxes:
+            self.bbox_head = nn.ModuleList([FFN(embed_dim, embed_dim, 4, 3) for _ in range(num_layers)])
+        else:
+            self.bbox_head = FFN(embed_dim, embed_dim, 4, 3)
+
         self.class_head = nn.Linear(embed_dim, num_classes)
 
         if self.two_stage:  # Encoder proposals as initial queries
@@ -87,99 +94,96 @@ class TransformerDecoder(nn.Module):
             Class logits with shape (batch_size, num_layers, num_queries, num_classes).
         """
 
-        # Initialize the object queries (either from encoder proposals or learned parameters)
-        queries = self._initialize_object_queries(features)
+        assert features.embed.ndim == 3, f"Expected features of shape (batch_size, num_features, embed_dim), got {features.embed.shape=}"
 
-        if self.two_stage:
-            proposal_boxes = torch.unsqueeze(queries.reference, dim=1)
-            proposal_logits = torch.unsqueeze(self.proposal_class_head(queries.embed), dim=1)
-
-            # Treat the proposal boxes as fixed references
-            queries.reference = queries.reference.detach()
+        # Initialize the object queries
+        queries = self._initialize_object_queries(batch_size=len(features.embed))
 
         # Iteratively decode the object queries
-        query_embed, query_ref = [], []
+        boxes, logits = [], []
         for i, layer in enumerate(self.layers):
             queries: Queries = layer(queries, features)
 
-            # Because we use Pre-LN, the output of each decoder layer still needs to be normalized
+            # Predict bounding boxes for this layer
+            bbox_head = self.bbox_head[i] if self.refine_boxes else self.bbox_head
+            offsets: Tensor = bbox_head(query_embed := self.norm(queries.embed))
+            layer_boxes = (queries.reference.logit(1e-5) + offsets).sigmoid()
+
+            # Refine the reference boxes for the next layer
+            if self.refine_boxes:
+                queries.reference = layer_boxes.detach()
+
+            # Predict class logits for this layer
+            layer_logits = self.class_head(query_embed)
+
+            # Optionally return the outputs from each layer for deep supervision
             if self.return_intermediates or i == len(self.layers) - 1:
-                query_embed.append(self.norm(queries.embed))
-                query_ref.append(queries.reference)
+                boxes.append(layer_boxes)
+                logits.append(layer_logits)
 
-        # Predict bounding boxes and class logits
-        query_embed = torch.stack(query_embed, dim=1)
-        query_ref = torch.stack(query_ref, dim=1)
-
-        offsets = self.bbox_head(query_embed)
-        boxes = (query_ref.logit(1e-5) + offsets).sigmoid()
-
-        logits = self.class_head(query_embed)
-
-        # In two-stage, we return the proposal predictions as intermediate outputs
-        if self.two_stage:
-            boxes = torch.cat([proposal_boxes, boxes], dim=1)
-            logits = torch.cat([proposal_logits, logits], dim=1)
+        # Stack the outputs from each layer into a single tensor
+        boxes = torch.stack(boxes, dim=1)
+        logits = torch.stack(logits, dim=1)
 
         return boxes, logits
 
-    def _initialize_object_queries(self, features: Features) -> Queries:
+    def _initialize_object_queries(self, batch_size: int) -> Queries:
         """
         Initializes the object queries for the transformer decoder.
 
         Args:
-            Features: Multi-level features, with shape (batch_size, num_features, embed_dim).
+            batch_size: Batch size to expand the queries to.
 
         Returns:
-            queries: Object queries with the following fields
+            queries: Initial object queries.
         """
+
+        # Learned object queries and positional embeddings
+        query_embed = self.queries.weight.unsqueeze(0)
+        query_pos = self.query_pos.weight.unsqueeze(0)
+
+        # The reference boxes use a learned mapping from the positional embeddings
+        # as the center point and a fixed width and height
+        feature_xy = torch.sigmoid(self.reference_points(query_pos))
+        feature_wh = torch.full_like(feature_xy, 0.1)
+        query_ref = torch.cat([feature_xy, feature_wh], dim=-1)
+
+        # Expand the queries across the batch size
+        query_embed = query_embed.expand(batch_size, -1, -1)
+        query_pos = query_pos.expand(batch_size, -1, -1)
+        query_ref = query_ref.expand(batch_size, -1, -1)
+
+        return Queries(embed=query_embed, pos=query_pos, reference=query_ref)
+
+    def _generate_feature_proposals(self, features: Features) -> Queries:
         # Get batch information
         batch_size, _, embed_dim = features.embed.shape
         device = features.embed.device
 
-        if self.two_stage:
-            # Score each feature by its maximum class probability
-            scores = torch.sigmoid(self.proposal_class_head(features.embed)).max(dim=-1).values
+        # Score each feature by its maximum class probability
+        scores = torch.sigmoid(self.proposal_class_head(features.embed)).max(dim=-1).values
 
-            # Gather the top-k scoring features
-            batch_indices = torch.arange(batch_size, device=device).unsqueeze(1)
-            topk_indices = scores.topk(self.num_queries, dim=1).indices
-            feature_embed = features.embed[batch_indices, topk_indices]
+        # Gather the top-k scoring features
+        batch_indices = torch.arange(batch_size, device=device).unsqueeze(1)
+        topk_indices = scores.topk(self.num_queries, dim=1).indices
+        feature_embed = features.embed[batch_indices, topk_indices]
 
-            # xy: Feature pixel centerpoint
-            # wh: Level-specific scale (scale * 2^level)
-            feature_xy = features.reference[batch_indices, topk_indices]
-            feature_levels = torch.cat([torch.full((w * h,), l, device=device) for l, (w, h) in enumerate(features.dimensions)])[
-                topk_indices
-            ]
-            feature_wh = (0.05 * (2**feature_levels)).unsqueeze(-1).expand(-1, -1, 2)
-            query_ref = torch.cat([feature_xy, feature_wh], dim=-1)
+        # xy: Feature pixel centerpoint
+        # wh: Level-specific scale (scale * 2^level)
+        feature_xy = features.reference[batch_indices, topk_indices]
+        feature_levels = torch.cat([torch.full((w * h,), l, device=device) for l, (w, h) in enumerate(features.dimensions)])
+        feature_levels = feature_levels[topk_indices]
+        feature_wh = (0.05 * (2**feature_levels)).unsqueeze(-1).expand(-1, -1, 2)
+        query_ref = torch.cat([feature_xy, feature_wh], dim=-1)
 
-            # The reference boxes are refined from the feature pixel's position
-            offsets = self.proposal_bbox_head(feature_embed)
-            query_ref = (query_ref.logit(1e-5) + offsets).sigmoid()
+        # The reference boxes are refined from the feature pixel's position
+        offsets = self.proposal_bbox_head(feature_embed)
+        query_ref = (query_ref.logit(1e-5) + offsets).sigmoid()
 
-            # The embeddings and positional embeddings are generated by projecting the
-            # positional encodings of the reference points into a shared latent space
-            ref_pos = build_reference_positional_embeddings(query_ref, embed_dim)
-            query_embed, query_pos = torch.chunk(self.proposal_projection(ref_pos), 2, dim=-1)
-        else:
-            # Learned object queries and positional embeddings
-            query_embed = self.queries.weight.unsqueeze(0)
-            query_pos = self.query_pos.weight.unsqueeze(0)
-
-            # The reference boxes use a learned mapping from the positional embeddings
-            # as the center point and a fixed width and height
-            feature_xy = torch.sigmoid(self.reference_points(query_pos))
-            feature_wh = torch.full_like(feature_xy, 0.1)
-            query_ref = torch.cat([feature_xy, feature_wh], dim=-1)
-
-            # Expand the queries across the batch size
-            query_embed = query_embed.expand(batch_size, -1, -1)
-            query_pos = query_pos.expand(batch_size, -1, -1)
-            query_ref = query_ref.expand(batch_size, -1, -1)
-
-        return Queries(embed=query_embed, pos=query_pos, reference=query_ref)
+        # The embeddings and positional embeddings are generated by projecting the
+        # positional encodings of the reference points into a shared latent space
+        ref_pos = build_reference_positional_embeddings(query_ref, embed_dim)
+        query_embed, query_pos = torch.chunk(self.proposal_projection(ref_pos), 2, dim=-1)
 
     @torch.no_grad()
     def _initialize_weights(self) -> None:
@@ -223,22 +227,12 @@ class DecoderLayer(nn.Module):
 
         # Self-attention
         self.norm1 = nn.LayerNorm(embed_dim)
-        self.self_attention = nn.MultiheadAttention(
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True,
-        )
+        self.self_attention = nn.MultiheadAttention(embed_dim, num_heads, dropout, batch_first=True)
         self.dropout1 = nn.Dropout(dropout)
 
         # Cross-attention
         self.norm2 = nn.LayerNorm(embed_dim)
-        self.cross_attention = nn.MultiheadAttention(
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True,
-        )
+        self.cross_attention = nn.MultiheadAttention(embed_dim, num_heads, dropout, batch_first=True)
         self.dropout2 = nn.Dropout(dropout)
 
         # Feedforward Network
@@ -257,9 +251,6 @@ class DecoderLayer(nn.Module):
         Returns:
             queries: Object queries with the same shape as the input.
         """
-
-        assert queries.embed.ndim == 3, f"Expected queries of shape (batch_size, num_queries, embed_dim), got {queries.embed.shape=}"
-        assert features.embed.ndim == 3, f"Expected features of shape (batch_size, num_features, embed_dim), got {features.embed.shape=}"
 
         # Self-attention
         v = self.norm1(queries.embed)
@@ -308,22 +299,12 @@ class DeformableDecoderLayer(nn.Module):
 
         # Self-attention
         self.norm1 = nn.LayerNorm(embed_dim)
-        self.self_attention = nn.MultiheadAttention(
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True,
-        )
+        self.self_attention = nn.MultiheadAttention(embed_dim, num_heads, dropout, batch_first=True)
         self.dropout1 = nn.Dropout(dropout)
 
         # Deformable cross-attention
         self.norm2 = nn.LayerNorm(embed_dim)
-        self.cross_attention = MultiHeadDeformableAttention(
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            num_levels=num_levels,
-            num_points=num_points,
-        )
+        self.cross_attention = MultiHeadDeformableAttention(embed_dim, num_heads, num_levels, num_points)
         self.dropout2 = nn.Dropout(dropout)
 
         # Feedforward Network
@@ -342,9 +323,6 @@ class DeformableDecoderLayer(nn.Module):
         Returns:
             queries: Object queries with the same shape as the input.
         """
-
-        assert queries.embed.ndim == 3, f"Expected queries of shape (batch_size, num_queries, embed_dim), got {queries.embed.shape=}"
-        assert features.embed.ndim == 3, f"Expected features of shape (batch_size, num_features, embed_dim), got {features.embed.shape=}"
 
         # Self-attention
         v = self.norm1(queries.embed)
