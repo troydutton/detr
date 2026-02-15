@@ -1,5 +1,6 @@
 import logging
-from typing import Dict
+from dataclasses import dataclass
+from typing import Optional
 
 import torch
 from torch import Tensor, nn
@@ -8,7 +9,17 @@ from models.backbone import Backbone
 from models.decoder import TransformerDecoder
 from models.encoder import TransformerEncoder
 
-Predictions = Dict[str, Tensor]
+
+@dataclass
+class Predictions:
+    boxes: Tensor
+    logits: Tensor
+
+
+@dataclass
+class ModelPredictions:
+    decoder: Predictions
+    encoder: Optional[Predictions] = None
 
 
 class DETR(nn.Module):
@@ -35,16 +46,15 @@ class DETR(nn.Module):
 
         self._initialize_weights(pretrained_weights=pretrained_weights)
 
-    def forward(self, images: Tensor) -> Predictions:
+    def forward(self, images: Tensor) -> ModelPredictions:
         """
         Predict bounding boxes and class logits for a batch of input images.
 
         Args:
             images: A batch of images with shape (batch, channels, height, width).
-            return_intermediates: Whether to return intermediate transformer outputs.
 
         Returns:
-            predictions: A dictionary containing normalized CXCYWH `boxes` and class `logits`.
+            predictions: Decoder, and optionally encoder predictions, with normalized CXCYWH `boxes` and class `logits`.
         """
 
         # Extract image features
@@ -54,12 +64,12 @@ class DETR(nn.Module):
         features = self.encoder(features)
 
         # Decode the features into object predictions
-        boxes, logits = self.decoder(features)
+        boxes, logits, encoder_boxes, encoder_logits = self.decoder(features)
 
-        return {
-            "boxes": boxes,
-            "logits": logits,
-        }
+        decoder_predictions = Predictions(boxes, logits)
+        encoder_predictions = Predictions(encoder_boxes, encoder_logits) if self.decoder.two_stage else None
+
+        return ModelPredictions(decoder_predictions, encoder_predictions)
 
     @torch.no_grad()
     def _initialize_weights(self, pretrained_weights: str = None) -> None:

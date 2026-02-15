@@ -14,7 +14,7 @@ from criterion.hungarian_matcher import HungarianMatcher
 if TYPE_CHECKING:
     from criterion.hungarian_matcher import MatchIndices
     from data import Target
-    from models import Predictions
+    from models import ModelPredictions, Predictions
 
 
 class SetCriterion(Criterion):
@@ -41,12 +41,17 @@ class SetCriterion(Criterion):
 
         self.matcher = HungarianMatcher(cost_weights=loss_weights, alpha=alpha, gamma=gamma)
 
-    def __call__(self, predictions: Predictions, targets: List[Target], accelerator: Optional[Accelerator] = None) -> Dict[str, Tensor]:
+    def __call__(
+        self,
+        predictions: ModelPredictions,
+        targets: List[Target],
+        accelerator: Optional[Accelerator] = None,
+    ) -> Dict[str, Tensor]:
         """
         Calculates losses for the given predictions and targets.
 
         Args:
-            predictions: Model predictions, with keys
+            predictions: Decoder, and optionally encoder, predictions, with keys
                 - `logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
                 - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
             targets: List of targets for each image, with keys
@@ -57,22 +62,36 @@ class SetCriterion(Criterion):
         Returns:
             losses: Dictionary of calculated losses.
         """
-        matched_indices = self.matcher(predictions, targets)
 
-        box_loss, giou_loss = self._calculate_box_losses(predictions, targets, matched_indices)
-        class_loss = self._calculate_class_loss(predictions, targets, matched_indices)
+        # Decoder losses
+        matched_indices = self.matcher(predictions.decoder, targets)
+        box_loss, giou_loss = self._calculate_box_losses(predictions.decoder, targets, matched_indices)
+        class_loss = self._calculate_class_loss(predictions.decoder, targets, matched_indices)
+
+        losses = {
+            "box": box_loss,
+            "giou": giou_loss,
+            "class": class_loss,
+        }
+
+        # Encoder losses (if two-stage)
+        if predictions.encoder is not None:
+            matched_indices = self.matcher(predictions.encoder, targets)
+            box_loss, giou_loss = self._calculate_box_losses(predictions.encoder, targets, matched_indices)
+            class_loss = self._calculate_class_loss(predictions.encoder, targets, matched_indices)
+
+            losses["box"] += box_loss
+            losses["giou"] += giou_loss
+            losses["class"] += class_loss
 
         # Normalize losses by the number of target boxes (averaged across all devices if distributed)
         num_targets = sum(len(t["boxes"]) for t in targets)
-
         if accelerator is not None:
             num_targets = accelerator.reduce(torch.tensor(num_targets, dtype=torch.float, device=accelerator.device), reduction="mean")
-
-        # Clamp to avoid division by zero in case of no targets
         num_targets = max(num_targets, 1)
+        losses = {k: v / num_targets for k, v in losses.items()}
 
         # Weighted sum
-        losses = {"box": box_loss / num_targets, "giou": giou_loss / num_targets, "class": class_loss / num_targets}
         losses["overall"] = sum(v * self.loss_weights.get(k, 1) for k, v in losses.items())
 
         return losses
@@ -104,7 +123,7 @@ class SetCriterion(Criterion):
         # Select matched predictions and targets
         prediction_indices, target_indices = matched_indices
 
-        prediction_boxes = predictions["boxes"][prediction_indices]  # (num_matches, 4)
+        prediction_boxes = predictions.boxes[prediction_indices]  # (num_matches, 4)
         target_boxes = torch.cat([t["boxes"][i].flatten(0, 1) for t, i in zip(targets, target_indices)])  # (num_matches, 4)
 
         # No targets, return zero losses
@@ -122,7 +141,12 @@ class SetCriterion(Criterion):
 
         return box_loss, giou_loss
 
-    def _calculate_class_loss(self, predictions: Predictions, targets: List[Target], matched_indices: MatchIndices) -> Tensor:
+    def _calculate_class_loss(
+        self,
+        predictions: Predictions,
+        targets: List[Target],
+        matched_indices: MatchIndices,
+    ) -> Tensor:
         """
         Calculate the classification loss focal between matched predictions and target labels.
 
@@ -140,7 +164,7 @@ class SetCriterion(Criterion):
         """
 
         # We retain all  predictions to supervise unmatched predictions
-        prediction_logits = predictions["logits"]
+        prediction_logits = predictions.logits
         prediction_probs = prediction_logits.sigmoid()
 
         # Build one-hot encoded target labels for the matched predictions

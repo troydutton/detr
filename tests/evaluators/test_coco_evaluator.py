@@ -6,6 +6,7 @@ import torch
 from pycocotools.coco import COCO
 
 from evaluators import CocoEvaluator
+from models import ModelPredictions, Predictions
 from utils.misc import silence_stdout
 
 
@@ -88,7 +89,7 @@ def test_coco_evaluator_update_and_compute(coco_path: Path):
     pred_logits[0, 0, 1, 0] = 0.0
     pred_logits[0, 0, 1, 2] = 0.0
 
-    predictions = {"logits": pred_logits, "boxes": pred_boxes}
+    predictions = ModelPredictions(decoder=Predictions(logits=pred_logits, boxes=pred_boxes))
 
     # Targets only need image_id and orig_size
     targets = [{"image_id": torch.tensor(1), "orig_size": torch.tensor([80, 100])}]  # h, w
@@ -153,7 +154,7 @@ def test_coco_evaluator_multi_layer_uses_final_only(coco_path: Path):
     pred_logits[0, -1, 0, 0] = 100.0  # Query 0: class 0 (cat ID 1)
     pred_logits[0, -1, 1, 1] = 100.0  # Query 1: class 1 (cat ID 2)
 
-    predictions = {"logits": pred_logits, "boxes": pred_boxes}
+    predictions = ModelPredictions(decoder=Predictions(logits=pred_logits, boxes=pred_boxes))
 
     targets = [{"image_id": torch.tensor(1), "orig_size": torch.tensor([80, 100])}]  # h, w
 
@@ -235,7 +236,7 @@ def test_coco_evaluator_multi_image_batch(coco_path: Path):
     pred_boxes[1, 0, 0] = torch.tensor([0.333, 0.444, 0.333, 0.222])
     pred_logits[1, 0, 0, 0] = 100.0  # class 0
 
-    predictions = {"logits": pred_logits, "boxes": pred_boxes}
+    predictions = ModelPredictions(decoder=Predictions(logits=pred_logits, boxes=pred_boxes))
 
     targets = [
         {"image_id": torch.tensor(1), "orig_size": torch.tensor([80, 100])},  # h, w

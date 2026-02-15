@@ -8,7 +8,7 @@
             "module": "accelerate.commands.launch",
             "args": [
                 "--num_processes=1",
-                "--main_process_port=29500",
+                "--main_process_port=42069",
                 "src/train.py",
                 "--config-name=ddetr",
                 "train.output_dir=/data/troy/models/detr/debug",

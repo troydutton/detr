@@ -31,7 +31,6 @@ class TransformerDecoder(nn.Module):
         two_stage: Initialize object queries using encoder proposals or learned parameters, optional.
         refine_boxes: Whether to iteratively refine the reference boxes across decoder layers, optional.
         num_classes: Number of object classes, required if `two_stage` is True.
-        return_intermediates: Whether to return intermediate transformer outputs, optional.
         kwargs: Arguments to construct the decoder layers.
             See `models.decoder.DecoderLayer` or `models.decoder.DeformableDecoderLayer`.
 
@@ -46,7 +45,6 @@ class TransformerDecoder(nn.Module):
         two_stage: bool = False,
         refine_boxes: bool = False,
         num_classes: Optional[int] = None,
-        return_intermediates: bool = True,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -57,7 +55,6 @@ class TransformerDecoder(nn.Module):
         self.two_stage = two_stage
         self.refine_boxes = refine_boxes
         self.num_classes = num_classes
-        self.return_intermediates = return_intermediates
 
         # Create the bounding box and classification heads
         if self.refine_boxes:
@@ -68,9 +65,10 @@ class TransformerDecoder(nn.Module):
         self.class_head = nn.Linear(embed_dim, num_classes)
 
         if self.two_stage:  # Encoder proposals as initial queries
-            self.proposal_bbox_head = FFN(embed_dim, embed_dim, output_dim=4, num_layers=3)
-            self.proposal_class_head = nn.Linear(embed_dim, num_classes)
-            self.proposal_projection = nn.Linear(embed_dim, 2 * embed_dim)
+            self.encoder_bbox_head = FFN(embed_dim, embed_dim, output_dim=4, num_layers=3)
+            self.encoder_class_head = nn.Linear(embed_dim, num_classes)
+            self.encoder_projection = nn.Sequential(nn.Linear(embed_dim, embed_dim), nn.LayerNorm(embed_dim))
+            self.positional_projection = nn.Sequential(nn.Linear(2 * embed_dim, 2 * embed_dim), nn.LayerNorm(2 * embed_dim))
         else:  # Learnable parameters as initial queries
             self.queries = nn.Embedding(num_queries, embed_dim)
             self.query_pos = nn.Embedding(num_queries, embed_dim)
@@ -81,7 +79,7 @@ class TransformerDecoder(nn.Module):
 
         self._initialize_weights()
 
-    def forward(self, features: Features) -> Tuple[Tensor, Tensor]:
+    def forward(self, features: Features) -> Tuple[Tensor, Tensor, Optional[Tensor], Optional[Tensor]]:
         """
         Forward pass for the transformer decoder.
 
@@ -92,19 +90,27 @@ class TransformerDecoder(nn.Module):
             boxes: Normalized CXCYWH bounding box predictions with shape (batch_size, num_layers, num_queries, 4).
             #### logits
             Class logits with shape (batch_size, num_layers, num_queries, num_classes).
+            #### encoder_boxes
+            Normalized CXCYWH encoder proposal box predictions with shape (batch_size, 1, num_features, 4).
+            #### encoder_logits
+            Encoder proposal class logits with shape (batch_size, 1, num_features, num_classes).
         """
 
         assert features.embed.ndim == 3, f"Expected features of shape (batch_size, num_features, embed_dim), got {features.embed.shape=}"
 
         # Initialize the object queries
-        queries = self._initialize_object_queries(batch_size=len(features.embed))
+        encoder_boxes = encoder_logits = None
+        if self.two_stage:
+            queries, encoder_boxes, encoder_logits = self._generate_query_proposals(features)
+        else:
+            queries = self._initialize_object_queries(len(features.embed))
 
         # Iteratively decode the object queries
         boxes, logits = [], []
         for i, layer in enumerate(self.layers):
             queries: Queries = layer(queries, features)
 
-            # Predict bounding boxes for this layer
+            # Predict bounding boxes
             bbox_head = self.bbox_head[i] if self.refine_boxes else self.bbox_head
             offsets: Tensor = bbox_head(query_embed := self.norm(queries.embed))
             layer_boxes = (queries.reference.logit(1e-5) + offsets).sigmoid()
@@ -113,19 +119,17 @@ class TransformerDecoder(nn.Module):
             if self.refine_boxes:
                 queries.reference = layer_boxes.detach()
 
-            # Predict class logits for this layer
+            # Predict class logits
             layer_logits = self.class_head(query_embed)
 
-            # Optionally return the outputs from each layer for deep supervision
-            if self.return_intermediates or i == len(self.layers) - 1:
-                boxes.append(layer_boxes)
-                logits.append(layer_logits)
+            boxes.append(layer_boxes)
+            logits.append(layer_logits)
 
         # Stack the outputs from each layer into a single tensor
         boxes = torch.stack(boxes, dim=1)
         logits = torch.stack(logits, dim=1)
 
-        return boxes, logits
+        return boxes, logits, encoder_boxes, encoder_logits
 
     def _initialize_object_queries(self, batch_size: int) -> Queries:
         """
@@ -155,35 +159,43 @@ class TransformerDecoder(nn.Module):
 
         return Queries(embed=query_embed, pos=query_pos, reference=query_ref)
 
-    def _generate_feature_proposals(self, features: Features) -> Queries:
+    def _generate_query_proposals(self, features: Features) -> Tuple[Queries, Tensor, Tensor]:
         # Get batch information
         batch_size, _, embed_dim = features.embed.shape
         device = features.embed.device
 
-        # Score each feature by its maximum class probability
-        scores = torch.sigmoid(self.proposal_class_head(features.embed)).max(dim=-1).values
+        # Predict proposal boxes and class logits for all features
+        # For reference boxes, use the feature pixel's position as the center
+        # and a level-specific scale as the width and height (scale * 2^level)
+        xy = features.reference
+        levels = torch.cat([torch.full((w * h,), l, device=device) for l, (w, h) in enumerate(features.dimensions)])
+        wh = torch.full_like(xy, 0.05) * (2**levels).unsqueeze(-1)
+        references = torch.cat([xy, wh], dim=-1)
 
-        # Gather the top-k scoring features
+        feature_embed = self.encoder_projection(features.embed)
+
+        offsets = self.encoder_bbox_head(feature_embed)
+        boxes = (references.logit(1e-5) + offsets).sigmoid()
+
+        logits: Tensor = self.encoder_class_head(feature_embed)
+
+        # Gather the features with the highest proposal scores (max class probability)
+        scores = logits.max(dim=-1).values
+
         batch_indices = torch.arange(batch_size, device=device).unsqueeze(1)
         topk_indices = scores.topk(self.num_queries, dim=1).indices
-        feature_embed = features.embed[batch_indices, topk_indices]
-
-        # xy: Feature pixel centerpoint
-        # wh: Level-specific scale (scale * 2^level)
-        feature_xy = features.reference[batch_indices, topk_indices]
-        feature_levels = torch.cat([torch.full((w * h,), l, device=device) for l, (w, h) in enumerate(features.dimensions)])
-        feature_levels = feature_levels[topk_indices]
-        feature_wh = (0.05 * (2**feature_levels)).unsqueeze(-1).expand(-1, -1, 2)
-        query_ref = torch.cat([feature_xy, feature_wh], dim=-1)
-
-        # The reference boxes are refined from the feature pixel's position
-        offsets = self.proposal_bbox_head(feature_embed)
-        query_ref = (query_ref.logit(1e-5) + offsets).sigmoid()
+        query_ref = boxes[batch_indices, topk_indices]
 
         # The embeddings and positional embeddings are generated by projecting the
         # positional encodings of the reference points into a shared latent space
-        ref_pos = build_reference_positional_embeddings(query_ref, embed_dim)
-        query_embed, query_pos = torch.chunk(self.proposal_projection(ref_pos), 2, dim=-1)
+        ref_pos = build_reference_positional_embeddings(query_ref, 2 * embed_dim)
+        query_embed, query_pos = torch.chunk(self.positional_projection(ref_pos), 2, dim=-1)
+
+        # Add a dummy layer dimension
+        boxes = boxes.unsqueeze(1)
+        logits = logits.unsqueeze(1)
+
+        return Queries(embed=query_embed, pos=query_pos, reference=query_ref), boxes, logits
 
     @torch.no_grad()
     def _initialize_weights(self) -> None:
@@ -195,7 +207,7 @@ class TransformerDecoder(nn.Module):
         nn.init.constant_(self.class_head.bias, bias)
 
         if self.two_stage:
-            nn.init.constant_(self.proposal_class_head.bias, bias)
+            nn.init.constant_(self.encoder_class_head.bias, bias)
         else:
             nn.init.xavier_uniform_(self.reference_points.weight, gain=1.0)
             nn.init.zeros_(self.reference_points.bias)

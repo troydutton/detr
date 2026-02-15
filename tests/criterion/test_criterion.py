@@ -1,6 +1,7 @@
 import torch
 
 from criterion import SetCriterion
+from models import ModelPredictions, Predictions
 
 
 def test_set_criterion_single_layer() -> None:
@@ -23,7 +24,7 @@ def test_set_criterion_single_layer() -> None:
     pred_logits = torch.randn(batch_size, num_layers, num_queries, num_classes)
     pred_boxes = torch.rand(batch_size, num_layers, num_queries, 4)
 
-    predictions = {"logits": pred_logits, "boxes": pred_boxes}
+    predictions = ModelPredictions(decoder=Predictions(logits=pred_logits, boxes=pred_boxes))
 
     # Dummy targets
     targets = []
@@ -64,7 +65,7 @@ def test_set_criterion_multi_layer() -> None:
     pred_logits = torch.randn(batch_size, num_layers, num_queries, num_classes)
     pred_boxes = torch.rand(batch_size, num_layers, num_queries, 4)
 
-    predictions = {"logits": pred_logits, "boxes": pred_boxes}
+    predictions = ModelPredictions(decoder=Predictions(logits=pred_logits, boxes=pred_boxes))
 
     # Dummy targets
     targets = []
@@ -108,7 +109,7 @@ def test_set_criterion_empty_targets() -> None:
     pred_logits = torch.randn(batch_size, num_layers, num_queries, num_classes)
     pred_boxes = torch.rand(batch_size, num_layers, num_queries, 4)
 
-    predictions = {"logits": pred_logits, "boxes": pred_boxes}
+    predictions = ModelPredictions(decoder=Predictions(logits=pred_logits, boxes=pred_boxes))
 
     # Empty targets (no objects in images)
     targets = [
@@ -147,7 +148,7 @@ def test_set_criterion_single_target() -> None:
     pred_logits = torch.randn(batch_size, num_layers, num_queries, num_classes)
     pred_boxes = torch.rand(batch_size, num_layers, num_queries, 4)
 
-    predictions = {"logits": pred_logits, "boxes": pred_boxes}
+    predictions = ModelPredictions(decoder=Predictions(logits=pred_logits, boxes=pred_boxes))
 
     # Single target per image
     targets = []

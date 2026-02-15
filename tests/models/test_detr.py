@@ -39,7 +39,6 @@ def test_detr_forward() -> None:
             "num_layers": num_decoder_layers,
             "embed_dim": embed_dim,
             "num_queries": num_queries,
-            "return_intermediates": True,
             "layer": {
                 "_target_": "models.decoder.DecoderLayer",
                 "embed_dim": embed_dim,
@@ -58,17 +57,21 @@ def test_detr_forward() -> None:
     # Forward pass
     output = model(images)
 
-    # Check output keys
-    assert "boxes" in output
-    assert "logits" in output
+    # Check output content
+    assert output.decoder.boxes is not None
+    assert output.decoder.logits is not None
 
     # Check output shapes
     expected_logits_shape = (batch_size, num_decoder_layers, num_queries, num_classes)
-    assert output["logits"].shape == expected_logits_shape, f"Expected logits shape {expected_logits_shape}, got {output['logits'].shape}"
+    assert (
+        output.decoder.logits.shape == expected_logits_shape
+    ), f"Expected logits shape {expected_logits_shape}, got {output.decoder.logits.shape}"
 
     expected_boxes_shape = (batch_size, num_decoder_layers, num_queries, 4)
-    assert output["boxes"].shape == expected_boxes_shape, f"Expected boxes shape {expected_boxes_shape}, got {output['boxes'].shape}"
+    assert (
+        output.decoder.boxes.shape == expected_boxes_shape
+    ), f"Expected boxes shape {expected_boxes_shape}, got {output.decoder.boxes.shape}"
 
     # Check that box coordinates are in [0, 1]
-    assert output["boxes"].min() >= 0.0
-    assert output["boxes"].max() <= 1.0
+    assert output.decoder.boxes.min() >= 0.0
+    assert output.decoder.boxes.max() <= 1.0

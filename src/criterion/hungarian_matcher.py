@@ -48,8 +48,8 @@ class HungarianMatcher:
             matched_indices: Matched prediction and target indices for each image and layer in the batch.
         """
 
-        batch_size, num_layers, _, _ = predictions["logits"].shape
-        device = predictions["logits"].device
+        batch_size, num_layers, _, _ = predictions.logits.shape
+        device = predictions.logits.device
 
         # TODO: Improve efficiency by batching cost calculations across layers and images
         matched_indices: List[Tensor] = []
@@ -63,8 +63,8 @@ class HungarianMatcher:
 
             for j in range(num_layers):
                 # Retrieve predictions for the layer
-                prediction_logits = predictions["logits"][i, j]
-                prediction_boxes = predictions["boxes"][i, j]
+                prediction_logits = predictions.logits[i, j]
+                prediction_boxes = predictions.boxes[i, j]
 
                 # Calculate individual costs
                 box_cost, giou_cost = self._calculate_box_costs(prediction_boxes, target_boxes)
