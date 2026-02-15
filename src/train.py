@@ -33,27 +33,21 @@ def main(args: DictConfig) -> None:
     # Resolve arguments
     args: Args = OmegaConf.to_container(args, resolve=True, throw_on_missing=True)
 
-    # Save the arguments to the output directory
+    # Initialize Weights & Biases
     output_dir = Path(args["train"]["output_dir"])
 
     if accelerator.is_main_process:
         output_dir.mkdir(parents=True, exist_ok=True)
-        OmegaConf.save(config=args, f=output_dir / "config.yaml")
-
-        # Initialize Weights & Biases
         wandb.init(project="detr", name=output_dir.name, config=args)
 
     accelerator.wait_for_everyone()
-
-    # Now that we've saved the arguments, we can remove unecessary keys
-    del args["train"]["output_dir"]
 
     # Create datasets (config/dataset/*.yaml)
     train_dataset: CocoDataset = instantiate(args["dataset"]["train"])
     val_dataset: CocoDataset = instantiate(args["dataset"]["val"])
 
     # Create dataloaders
-    batch_size, num_workers = args["train"].pop("batch_size"), args["train"].pop("num_workers")
+    batch_size, num_workers = args["train"]["batch_size"], args["train"]["num_workers"]
     train_data = DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -74,6 +68,10 @@ def main(args: DictConfig) -> None:
     # Create model (config/model/*.yaml)
     args["model"]["num_classes"] = train_dataset.num_classes
     model = DETR(**args["model"])
+
+    # Save the arguments to the output directory
+    if accelerator.is_main_process:
+        OmegaConf.save(config=args, f=output_dir / "config.yaml")
 
     # Create optimizer (config/optimizer/*.yaml)
     lr = args["optimizer"]["lr"]
@@ -104,6 +102,9 @@ def main(args: DictConfig) -> None:
     if checkpoint is not None:
         accelerator.load_state(checkpoint)
 
+    del args["train"]["batch_size"]
+    del args["train"]["num_workers"]
+
     # Start training
     train(
         model=model,
@@ -114,7 +115,6 @@ def main(args: DictConfig) -> None:
         train_data=train_data,
         val_data=val_data,
         accelerator=accelerator,
-        output_dir=output_dir,
         **args["train"],
     )
 
