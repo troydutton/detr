@@ -7,9 +7,9 @@ from torch import Tensor
 
 if TYPE_CHECKING:
     from data import Target
-    from models import Predictions
+    from models import ModelPredictions
 
 
 class Criterion(ABC):
     @abstractmethod
-    def __call__(self, predictions: Predictions, targets: List[Target]) -> Dict[str, Tensor]: ...
+    def __call__(self, predictions: ModelPredictions, targets: List[Target]) -> Dict[str, Tensor]: ...

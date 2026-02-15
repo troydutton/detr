@@ -13,7 +13,7 @@ from utils.misc import silence_stdout
 
 if TYPE_CHECKING:
     from data import Target
-    from models import Predictions
+    from models import ModelPredictions
 
 
 class CocoEvaluator(Evaluator):
@@ -36,14 +36,14 @@ class CocoEvaluator(Evaluator):
         """Reset the internal state of the evaluator."""
         self.predictions.clear()
 
-    def update(self, predictions: Predictions, targets: List[Target], accelerator: Optional[Accelerator] = None) -> None:
+    def update(self, predictions: ModelPredictions, targets: List[Target], accelerator: Optional[Accelerator] = None) -> None:
         """
         Update the evaluator with a batch of predictions and targets.
 
         Args:
-            predictions: Dictionary containing
-                - `logits`: Logits with shape (batch_size, num_layers, num_queries, num_classes).
-                - `boxes`: Normalized boxes with shape (batch_size, num_layers, num_queries, 4) in cxcywh format.
+            predictions: Decoder, and optionally encoder, predictions, with keys
+                - `logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
             targets: List of targets, where each target contains
                 - `image_id`: Image ID.
                 - `orig_size`: Original image size [height, width].
@@ -51,8 +51,8 @@ class CocoEvaluator(Evaluator):
         """
 
         # Get prediction boxes, scores, and labels from the final layer
-        boxes = predictions["boxes"][:, -1]
-        logits = predictions["logits"][:, -1]
+        boxes = predictions.decoder.boxes[:, -1]
+        logits = predictions.decoder.logits[:, -1]
         scores, labels = logits.sigmoid().max(dim=-1)
 
         # Extract image ids and scales

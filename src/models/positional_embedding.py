@@ -65,7 +65,7 @@ def build_reference_positional_embeddings(references: Tensor, num_channels: int,
         temperature: Base for the frequency exponential scale.
 
     Returns:
-        pos_embeddings: Positional embeddings with shape (batch_size, num_queries, num_channels).
+        pos: Positional embeddings with shape (batch_size, num_queries, num_channels).
     """
 
     # Get batch information
@@ -75,17 +75,15 @@ def build_reference_positional_embeddings(references: Tensor, num_channels: int,
     if num_channels % (2 * num_axes) != 0:
         raise ValueError(f"Total channels must be divisible by {2 * num_axes}, got {num_channels=}.")
 
-    # Each axis (x, y, w, h) gets an equal share of the channels
-    dim_per_axis = num_channels // num_axes
+    # Each axis gets an equal share of the channels
+    channels_per_axis = num_channels // num_axes
 
     # Calculate frequency terms: 1 / (10000 ^ (2i / d_model))
-    # We use log space for numerical stability
-    freq_indices = torch.arange(0, dim_per_axis, 2, dtype=torch.float, device=device)
-    div_term = torch.exp(freq_indices * -(math.log(temperature) / dim_per_axis))
+    div_term = torch.arange(channels_per_axis, dtype=torch.float32, device=device)
+    div_term = temperature ** (2 * (div_term // 2) / channels_per_axis)
 
     # Create frequency grid, interleaving sin and cos terms for each axis
-    references = references * 2 * math.pi
-    references = references.unsqueeze(-1) / div_term
-    pos_embeddings = torch.stack((references.sin(), references.cos()), dim=-1).flatten(-3)
+    pos = (references[:, :, :, None] * 2 * math.pi) / div_term
+    pos = torch.stack((pos[:, :, :, 0::2].sin(), pos[:, :, :, 1::2].cos()), dim=4).flatten(2)
 
-    return pos_embeddings
+    return pos
