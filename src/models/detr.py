@@ -1,9 +1,12 @@
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import List, Optional, Union
 
 import torch
+from safetensors.torch import load_file
 from torch import Tensor, nn
+from torchvision.ops import nms
+from torchvision.ops.boxes import box_convert
 
 from models.backbone import Backbone
 from models.decoder import TransformerDecoder
@@ -20,6 +23,13 @@ class Predictions:
 class ModelPredictions:
     decoder: Predictions
     encoder: Optional[Predictions] = None
+
+
+@dataclass
+class Detections:
+    boxes: Tensor
+    labels: Tensor
+    scores: Tensor
 
 
 class DETR(nn.Module):
@@ -72,6 +82,54 @@ class DETR(nn.Module):
         return ModelPredictions(decoder_predictions, encoder_predictions)
 
     @torch.no_grad()
+    def predict(
+        self,
+        images: Tensor,
+        confidence_threshold: float = 0.5,
+        iou_threshold: float = 0.5,
+    ) -> Union[Detections, List[Tensor]]:
+        """
+        Predict bounding boxes and class logits for a batch of input images.
+
+        Args:
+            images: A batch of images with shape (batch, channels, height, width) or (channels, height, width).
+            confidence_threshold: Minimum confidence score for a prediction to be kept.
+            iou_threshold: IoU threshold for non-maximum suppression.
+
+        Returns:
+            detections: A detection for every image, containg the `boxes`, `labels`, and `scores` for the predicted objects.
+        """
+
+        # Handle single image input
+        if images.ndim == 3:
+            images = images.unsqueeze(0)
+
+        # Extract image features
+        features = self.backbone(images)
+
+        # Encode the features
+        features = self.encoder(features)
+
+        # Decode the features into object predictions
+        boxes, logits, _, _ = self.decoder(features)
+        scores, labels = logits.sigmoid().max(dim=-1)
+
+        # Filter predictions
+        detections = []
+        for image_boxes, image_labels, image_scores in zip(boxes, labels, scores):
+            # Apply confidence thresholding
+            keep = image_scores > confidence_threshold
+            image_boxes, image_scores, image_labels = image_boxes[keep], image_scores[keep], image_labels[keep]
+
+            # Apply non-maximum suppression
+            keep = nms(box_convert(image_boxes, "cxcywh", "xyxy"), image_scores, iou_threshold)
+            image_boxes, image_scores, image_labels = image_boxes[keep], image_scores[keep], image_labels[keep]
+
+            detections.append(Detections(image_boxes, image_labels, image_scores))
+
+        return detections if len(detections) > 1 else detections[0]
+
+    @torch.no_grad()
     def _initialize_weights(self, pretrained_weights: str = None) -> None:
         # Check for BatchNorm layers
         for module_name, module in self.backbone.named_modules():
@@ -83,7 +141,12 @@ class DETR(nn.Module):
 
         logging.info(f"Loading pretrained weights from '{pretrained_weights}'.")
 
-        state_dict = torch.load(pretrained_weights, map_location="cpu")["model"]
+        if pretrained_weights.endswith((".pt", ".pth")):
+            state_dict = torch.load(pretrained_weights, map_location="cpu")
+        elif pretrained_weights.endswith(".safetensors"):
+            state_dict = load_file(pretrained_weights, device="cpu")
+        else:
+            raise ValueError(f"Unsupported pretrained weights format: {pretrained_weights}")
 
         incompatible = self.load_state_dict(state_dict, strict=False)
 
