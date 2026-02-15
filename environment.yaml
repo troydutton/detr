@@ -22,6 +22,7 @@ dependencies:
   - wandb
   - hydra-core
   - ipykernel
+  - ipywidgets
   - ruff
   - black
   - pytest
