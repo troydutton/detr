@@ -19,6 +19,7 @@ class Features:
     embed: Tensor
     pos: Tensor
     reference: Tensor
+    levels: Tensor
     dimensions: Tensor
 
 
@@ -72,6 +73,7 @@ class Backbone(nn.Module):
             - `features`: Embeddings with shape (batch_size, num_features, embed_dim).
             - `pos`: Positional embeddings with shape (batch_size, num_features, embed_dim).
             - `reference`: Reference points for the features with shape (batch_size, num_features, 2).
+            - `levels`: Level index for each feature with shape (num_features,).
             - `dimensions`: Width and height of each feature level with shape (num_levels, 2).
         """
 
@@ -83,9 +85,9 @@ class Backbone(nn.Module):
         backbone_features = self.backbone(images)  # List of features with shape (batch_size, channels, feature_height, feature_width)
 
         # Build multi-level features, positional embeddings, and reference points for the transformer
-        multi_level_features, multi_level_pos, multi_level_reference, dimensions = [], [], [], []
+        multi_level_features, multi_level_pos, multi_level_reference, levels, dimensions = [], [], [], [], []
 
-        for features, projection, level_pos in zip(backbone_features, self.projections, self.level_pos.weight):
+        for level, (features, projection, level_pos) in enumerate(zip(backbone_features, self.projections, self.level_pos.weight)):
             _, _, height, width = features.shape
 
             # Project into the desired embedding dimension
@@ -108,6 +110,7 @@ class Backbone(nn.Module):
             multi_level_features.append(features)
             multi_level_pos.append(feature_pos)
             multi_level_reference.append(feature_reference)
+            levels.append(torch.full((width * height,), level, device=device))
             dimensions.append((width, height))
 
         # Concatenate features from all levels
@@ -115,11 +118,13 @@ class Backbone(nn.Module):
         multi_level_pos = torch.cat(multi_level_pos, dim=1)
         multi_level_reference = torch.cat(multi_level_reference, dim=1)
         dimensions = torch.tensor(dimensions, device=device)
+        levels = torch.cat(levels)
 
         return Features(
             embed=multi_level_features,
             pos=multi_level_pos,
             reference=multi_level_reference,
+            levels=levels,
             dimensions=dimensions,
         )
 
