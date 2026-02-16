@@ -4,7 +4,7 @@ import torch
 from torch import Tensor
 
 
-def build_positional_embeddings(input_tensor: Tensor, temperature: float = 10000.0) -> Tensor:
+def build_pos_embed(input_tensor: Tensor, temperature: float = 10000.0) -> Tensor:
     """
     Generates 2D sinusoidal positional embeddings for a given input tensor.
 
@@ -55,7 +55,7 @@ def build_positional_embeddings(input_tensor: Tensor, temperature: float = 10000
     return pos_embeddings.to(input_tensor.device)
 
 
-def build_reference_positional_embeddings(references: Tensor, num_channels: int, temperature: float = 10000.0) -> Tensor:
+def build_ref_pos_embed(references: Tensor, num_channels: int, temperature: float = 10000.0) -> Tensor:
     """
     Generates sinusoidal positional embeddings for reference points/boxes.
 
