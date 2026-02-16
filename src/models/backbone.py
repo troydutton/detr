@@ -8,7 +8,7 @@ import torch.nn as nn
 from timm.models import FeatureInfo
 from torch import Tensor
 
-from models.positional_embedding import build_positional_embeddings
+from models.positional_embedding import build_pos_embed
 from utils.misc import take_annotation_from
 
 logger = logging.getLogger("detr")
@@ -94,7 +94,7 @@ class Backbone(nn.Module):
             features: Tensor = projection(features)
 
             # Build positional embeddings for this level, adding the learnable level embedding
-            feature_pos = build_positional_embeddings(features) + level_pos.view(1, self.embed_dim, 1, 1)
+            feature_pos = build_pos_embed(features) + level_pos.view(1, self.embed_dim, 1, 1)
 
             # Build reference points (center of each pixel normalized to [0, 1])
             x = torch.linspace(0.5, width - 0.5, width, device=device) / width
