@@ -65,16 +65,17 @@ class TransformerDecoder(nn.Module):
 
         self.class_head = nn.Linear(embed_dim, num_classes)
 
+        # Create the object query initialization components
         if self.two_stage:  # Encoder proposals as initial queries
             self.encoder_bbox_head = FFN(embed_dim, embed_dim, output_dim=4, num_layers=3)
             self.encoder_class_head = nn.Linear(embed_dim, num_classes)
             self.encoder_projection = nn.Sequential(nn.Linear(embed_dim, embed_dim), nn.LayerNorm(embed_dim))
-            self.pos_projection = nn.Sequential(nn.Linear(2 * embed_dim, embed_dim), nn.LayerNorm(embed_dim))
         else:  # Learnable parameters as initial queries
             self.queries = nn.Embedding(num_queries, embed_dim)
-            self.query_pos = nn.Embedding(num_queries, embed_dim)
             self.reference_points = nn.Linear(embed_dim, 2)
+        self.pos_projection = nn.Sequential(nn.Linear(2 * embed_dim, embed_dim), nn.LayerNorm(embed_dim))
 
+        # Create the decoder layers
         self.layers = nn.ModuleList([instantiate(kwargs["layer"]) for _ in range(num_layers)])
         self.norm = nn.LayerNorm(embed_dim)
 
@@ -118,9 +119,10 @@ class TransformerDecoder(nn.Module):
             wh = queries.reference[..., 2:] * offsets[..., 2:].exp()
             layer_boxes = torch.cat([xy, wh], dim=-1)
 
-            # Refine the reference boxes for the next layer
+            # Refine the reference boxes and positional embeddings for the next layer
             if self.refine_boxes:
                 queries.reference = layer_boxes.detach()
+                queries.pos = self.pos_projection(build_ref_pos_embed(queries.reference, 2 * self.embed_dim))
 
             # Predict class logits
             layer_logits = self.class_head(query_embed)
@@ -145,15 +147,16 @@ class TransformerDecoder(nn.Module):
             queries: Initial object queries.
         """
 
-        # Learned object queries and positional embeddings
+        # Learned object query embeddings
         query_embed = self.queries.weight.unsqueeze(0)
-        query_pos = self.query_pos.weight.unsqueeze(0)
 
-        # The reference boxes use a learned mapping from the positional embeddings
-        # as the center point and a fixed width and height
-        feature_xy = torch.sigmoid(self.reference_points(query_pos))
+        # Generate reference boxes from the query embeddings
+        feature_xy = torch.sigmoid(self.reference_points(query_embed))
         feature_wh = torch.full_like(feature_xy, 0.1)
         query_ref = torch.cat([feature_xy, feature_wh], dim=-1)
+
+        # Generate positional embeddings from reference boxes
+        query_pos: Tensor = self.pos_projection(build_ref_pos_embed(query_ref, 2 * self.embed_dim))
 
         # Expand the queries across the batch size
         query_embed = query_embed.expand(batch_size, -1, -1)
@@ -202,7 +205,7 @@ class TransformerDecoder(nn.Module):
         query_embed = feature_embed[batch_indices, topk_indices]
         query_ref = boxes[batch_indices, topk_indices]
 
-        # Generate positional embeddings based on the reference boxes
+        # Generate positional embeddings from the reference boxes
         query_pos = self.pos_projection(build_ref_pos_embed(query_ref, 2 * self.embed_dim))
 
         # Treat the references as fixed priors for the decoder
