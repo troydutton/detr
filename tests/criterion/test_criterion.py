@@ -11,6 +11,7 @@ def test_set_criterion_single_layer() -> None:
     # Test Parameters
     batch_size = 2
     num_layers = 1
+    num_groups = 1
     num_queries = 50
     num_classes = 10
     num_targets = [3, 5]
@@ -20,9 +21,9 @@ def test_set_criterion_single_layer() -> None:
         "giou": 2.0,
     }
 
-    # Dummy predictions with 4D tensors (batch, layers, queries, *)
-    pred_logits = torch.randn(batch_size, num_layers, num_queries, num_classes)
-    pred_boxes = torch.rand(batch_size, num_layers, num_queries, 4)
+    # Dummy predictions with 4D tensors (batch, layers, groups, queries, *)
+    pred_logits = torch.randn(batch_size, num_layers, num_groups, num_queries, num_classes)
+    pred_boxes = torch.rand(batch_size, num_layers, num_groups, num_queries, 4)
 
     predictions = ModelPredictions(decoder=Predictions(logits=pred_logits, boxes=pred_boxes))
 
@@ -52,6 +53,7 @@ def test_set_criterion_multi_layer() -> None:
     # Test Parameters
     batch_size = 2
     num_layers = 6
+    num_groups = 2
     num_queries = 50
     num_classes = 10
     num_targets = [3, 5]
@@ -61,9 +63,9 @@ def test_set_criterion_multi_layer() -> None:
         "giou": 2.0,
     }
 
-    # Dummy predictions with 4D tensors (batch, layers, queries, *)
-    pred_logits = torch.randn(batch_size, num_layers, num_queries, num_classes)
-    pred_boxes = torch.rand(batch_size, num_layers, num_queries, 4)
+    # Dummy predictions with 4D tensors (batch, layers, groups, queries, *)
+    pred_logits = torch.randn(batch_size, num_layers, num_groups, num_queries, num_classes)
+    pred_boxes = torch.rand(batch_size, num_layers, num_groups, num_queries, 4)
 
     predictions = ModelPredictions(decoder=Predictions(logits=pred_logits, boxes=pred_boxes))
 
@@ -97,6 +99,7 @@ def test_set_criterion_empty_targets() -> None:
     # Test Parameters
     batch_size = 2
     num_layers = 3
+    num_groups = 1
     num_queries = 50
     num_classes = 10
     loss_weights = {
@@ -106,8 +109,8 @@ def test_set_criterion_empty_targets() -> None:
     }
 
     # Dummy predictions
-    pred_logits = torch.randn(batch_size, num_layers, num_queries, num_classes)
-    pred_boxes = torch.rand(batch_size, num_layers, num_queries, 4)
+    pred_logits = torch.randn(batch_size, num_layers, num_groups, num_queries, num_classes)
+    pred_boxes = torch.rand(batch_size, num_layers, num_groups, num_queries, 4)
 
     predictions = ModelPredictions(decoder=Predictions(logits=pred_logits, boxes=pred_boxes))
 
@@ -136,6 +139,7 @@ def test_set_criterion_single_target() -> None:
     # Test Parameters
     batch_size = 2
     num_layers = 3
+    num_groups = 1
     num_queries = 50
     num_classes = 10
     loss_weights = {
@@ -145,8 +149,8 @@ def test_set_criterion_single_target() -> None:
     }
 
     # Dummy predictions
-    pred_logits = torch.randn(batch_size, num_layers, num_queries, num_classes)
-    pred_boxes = torch.rand(batch_size, num_layers, num_queries, 4)
+    pred_logits = torch.randn(batch_size, num_layers, num_groups, num_queries, num_classes)
+    pred_boxes = torch.rand(batch_size, num_layers, num_groups, num_queries, 4)
 
     predictions = ModelPredictions(decoder=Predictions(logits=pred_logits, boxes=pred_boxes))
 

@@ -33,11 +33,13 @@ class SetCriterion(Criterion):
         class_weights: Optional[Tensor] = None,
         alpha: float = 0.25,
         gamma: float = 2.0,
+        num_groups: int = 1,
     ) -> None:
         self.loss_weights = loss_weights
         self.class_weights = class_weights
         self.alpha = alpha
         self.gamma = gamma
+        self.num_groups = num_groups
 
         self.matcher = HungarianMatcher(cost_weights=loss_weights, alpha=alpha, gamma=gamma)
 
@@ -124,7 +126,7 @@ class SetCriterion(Criterion):
         prediction_indices, target_indices = matched_indices
 
         prediction_boxes = predictions.boxes[prediction_indices]  # (num_matches, 4)
-        target_boxes = torch.cat([t["boxes"][i].flatten(0, 1) for t, i in zip(targets, target_indices)])  # (num_matches, 4)
+        target_boxes = torch.cat([t["boxes"][i] for t, i in zip(targets, target_indices)])  # (num_matches, 4)
 
         # No targets, return zero losses
         if target_boxes.numel() == 0:
@@ -169,7 +171,7 @@ class SetCriterion(Criterion):
 
         # Build one-hot encoded target labels for the matched predictions
         prediction_indices, target_indices = matched_indices
-        target_labels = torch.cat([t["labels"][i].flatten(0, 1) for t, i in zip(targets, target_indices)])  # (num_matches,)
+        target_labels = torch.cat([t["labels"][i] for t, i in zip(targets, target_indices)])  # (num_matches,)
 
         one_hot_target_labels = torch.zeros_like(prediction_probs)
         one_hot_target_labels[*prediction_indices, target_labels] = 1.0

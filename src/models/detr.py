@@ -38,21 +38,18 @@ class DETR(nn.Module):
 
     Args:
         embed_dim: Embedding dimension.
-        num_classes: Number of object classes.
         pretrained_weights: Path to a pretrained weights file.
         kwargs: Arguments to construct the backbone and transformer.
             See `models.backbone.Backbone`, `models.encoder.TransformerEncoder`, and `models.decoder.TransformerDecoder`.
     """
 
-    def __init__(self, num_classes: int, pretrained_weights: str = None, **kwargs) -> None:
+    def __init__(self, pretrained_weights: str = None, **kwargs) -> None:
         super().__init__()
-
-        self.num_classes = num_classes
 
         # Build the backbone, transformer encoder, and transformer decoder
         self.backbone = Backbone(**kwargs["backbone"])
         self.encoder = TransformerEncoder(**kwargs["encoder"])
-        self.decoder = TransformerDecoder(**kwargs["decoder"], num_classes=num_classes)
+        self.decoder = TransformerDecoder(**kwargs["decoder"])
 
         self._initialize_weights(pretrained_weights=pretrained_weights)
 
@@ -77,7 +74,12 @@ class DETR(nn.Module):
         boxes, logits, encoder_boxes, encoder_logits = self.decoder(features)
 
         decoder_predictions = Predictions(boxes, logits)
-        encoder_predictions = Predictions(encoder_boxes, encoder_logits) if self.decoder.two_stage else None
+
+        # Supervise encoder predictions if two-stage is enabled
+        if self.decoder.two_stage:
+            encoder_predictions = Predictions(encoder_boxes, encoder_logits)
+        else:
+            encoder_predictions = None
 
         return ModelPredictions(decoder_predictions, encoder_predictions)
 

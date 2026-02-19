@@ -9,10 +9,11 @@ defaults:
   - _self_
 
 train:
-  output_dir: /data/troy/models/ddetr/ddetr-nano
+  output_dir: /data/troy/models/ddetr/ddetr-nano-group
   num_epochs: 50 
   batch_size: 32
   num_workers: 6
   save_period: 10
   max_grad_norm: 0.1
+  random_seed: 42
   checkpoint: Null
