@@ -25,12 +25,13 @@ class TransformerDecoder(nn.Module):
     Transformer decoder composed of a stack of N decoder layers.
 
     Args:
-        num_layers: Number of decoder layers.
         embed_dim: Embedding dimension.
+        num_classes: Number of classes.
+        num_layers: Number of decoder layers.
         num_queries: Number of object queries.
+        num_groups: Number of query groups, optional.
         two_stage: Initialize object queries using encoder proposals or learned parameters, optional.
         refine_boxes: Whether to iteratively refine the reference boxes across decoder layers, optional.
-        num_classes: Number of object classes, required if `two_stage` is True.
         kwargs: Arguments to construct the decoder layers.
             See `models.decoder.DecoderLayer` or `models.decoder.DeformableDecoderLayer`.
 
@@ -38,24 +39,25 @@ class TransformerDecoder(nn.Module):
 
     def __init__(
         self,
-        num_layers: int,
         embed_dim: int,
+        num_classes: int,
+        num_layers: int,
         num_queries: int,
         *,
+        num_groups: int = 1,
         two_stage: bool = False,
         refine_boxes: bool = False,
-        num_classes: Optional[int] = None,
         **kwargs,
     ) -> None:
         super().__init__()
 
-        assert not two_stage or num_classes is not None, "num_classes is required when two_stage is True"
-
         self.embed_dim = embed_dim
+        self.num_classes = num_classes
+        self.num_layers = num_layers
         self.num_queries = num_queries
+        self.num_groups = num_groups
         self.two_stage = two_stage
         self.refine_boxes = refine_boxes
-        self.num_classes = num_classes
 
         # Create the bounding box and classification heads
         if self.refine_boxes:
@@ -71,7 +73,7 @@ class TransformerDecoder(nn.Module):
             self.encoder_class_head = nn.Linear(embed_dim, num_classes)
             self.encoder_projection = nn.Sequential(nn.Linear(embed_dim, embed_dim), nn.LayerNorm(embed_dim))
         else:  # Learnable parameters as initial queries
-            self.queries = nn.Embedding(num_queries, embed_dim)
+            self.queries = nn.Embedding(num_groups * num_queries, embed_dim)
             self.reference_points = nn.Linear(embed_dim, 2)
         self.pos_projection = nn.Sequential(nn.Linear(2 * embed_dim, embed_dim), nn.LayerNorm(embed_dim))
 
@@ -89,23 +91,27 @@ class TransformerDecoder(nn.Module):
             features: Multi-level features with shape (batch_size, num_features, embed_dim).
 
         Returns:
-            boxes: Normalized CXCYWH bounding box predictions with shape (batch_size, num_layers, num_queries, 4).
+            boxes: Decoder box predictions.
             #### logits
-            Class logits with shape (batch_size, num_layers, num_queries, num_classes).
+            Decoder class logits.
             #### encoder_boxes
-            Normalized CXCYWH encoder proposal box predictions with shape (batch_size, 1, num_features, 4).
+            Encoder proposal box predictions.
             #### encoder_logits
-            Encoder proposal class logits with shape (batch_size, 1, num_features, num_classes).
+            Encoder proposal class logits.
         """
 
         assert features.embed.ndim == 3, f"Expected features of shape (batch_size, num_features, embed_dim), got {features.embed.shape=}"
 
-        # Initialize the object queries
+        # Get batch information
+        batch_size, _, _ = features.embed.shape
+
+        # Initialize the object queries, during inference we only user the first query group
+        num_groups = self.num_groups if self.training else 1
         encoder_boxes = encoder_logits = None
         if self.two_stage:
-            queries, encoder_boxes, encoder_logits = self._generate_query_proposals(features)
+            queries, encoder_boxes, encoder_logits = self._generate_query_proposals(features, num_groups)
         else:
-            queries = self._initialize_object_queries(len(features.embed))
+            queries = self._initialize_object_queries(batch_size, num_groups)
 
         # Iteratively decode the object queries
         boxes, logits = [], []
@@ -131,24 +137,25 @@ class TransformerDecoder(nn.Module):
             logits.append(layer_logits)
 
         # Stack the outputs from each layer into a single tensor
-        boxes = torch.stack(boxes, dim=1)
-        logits = torch.stack(logits, dim=1)
+        boxes = torch.stack(boxes, dim=1).view(batch_size, self.num_layers, num_groups, self.num_queries, -1)
+        logits = torch.stack(logits, dim=1).view(batch_size, self.num_layers, num_groups, self.num_queries, -1)
 
         return boxes, logits, encoder_boxes, encoder_logits
 
-    def _initialize_object_queries(self, batch_size: int) -> Queries:
+    def _initialize_object_queries(self, batch_size: int, num_groups: int) -> Queries:
         """
         Initializes the object queries for the transformer decoder.
 
         Args:
             batch_size: Batch size to expand the queries to.
+            num_groups: Number of query groups to use.
 
         Returns:
             queries: Initial object queries.
         """
 
-        # Learned object query embeddings
-        query_embed = self.queries.weight.unsqueeze(0)
+        # Learned object query embeddings (1, num_groups * num_queries, embed_dim)
+        query_embed = self.queries.weight[: num_groups * self.num_queries].unsqueeze(0)
 
         # Generate reference boxes from the query embeddings
         feature_xy = torch.sigmoid(self.reference_points(query_embed))
@@ -211,10 +218,6 @@ class TransformerDecoder(nn.Module):
         # Treat the references as fixed priors for the decoder
         query_ref = query_ref.detach()
 
-        # Add a dummy layer dimension
-        boxes = boxes.unsqueeze(1)
-        logits = logits.unsqueeze(1)
-
         return Queries(embed=query_embed, pos=query_pos, reference=query_ref), boxes, logits
 
     @torch.no_grad()
@@ -254,8 +257,11 @@ class DecoderLayer(nn.Module):
         ffn_dim: int,
         num_heads: int,
         dropout: float = 0.0,
+        num_groups: int = 1,
     ) -> None:
         super().__init__()
+
+        self.num_groups = num_groups
 
         # Self-attention
         self.norm1 = nn.LayerNorm(embed_dim)
@@ -284,10 +290,25 @@ class DecoderLayer(nn.Module):
             queries: Object queries with the same shape as the input.
         """
 
+        # Get batch information
+        num_groups = self.num_groups if self.training else 1
+        batch_size, total_queries, _ = queries.embed.shape
+        num_queries = total_queries // num_groups
+
+        # Queries attend within their group in self-attention
+        queries.embed = queries.embed.reshape(batch_size * num_groups, num_queries, -1)
+        queries.pos = queries.pos.reshape(batch_size * num_groups, num_queries, -1)
+        queries.reference = queries.reference.reshape(batch_size * num_groups, num_queries, -1)
+
         # Self-attention
         v = self.norm1(queries.embed)
         q = k = v + queries.pos
         queries.embed = queries.embed + self.dropout1(self.self_attention(q, k, v, need_weights=False)[0])
+
+        # Groups attend to the same image feature in cross-attention
+        queries.embed = queries.embed.reshape(batch_size, total_queries, -1)
+        queries.pos = queries.pos.reshape(batch_size, total_queries, -1)
+        queries.reference = queries.reference.reshape(batch_size, total_queries, -1)
 
         # Cross-attention
         q = self.norm2(queries.embed) + queries.pos
@@ -326,8 +347,11 @@ class DeformableDecoderLayer(nn.Module):
         num_points: int,
         num_levels: int,
         dropout: float = 0.0,
+        num_groups: int = 1,
     ) -> None:
         super().__init__()
+
+        self.num_groups = num_groups
 
         # Self-attention
         self.norm1 = nn.LayerNorm(embed_dim)
@@ -356,10 +380,25 @@ class DeformableDecoderLayer(nn.Module):
             queries: Object queries with the same shape as the input.
         """
 
+        # Get batch information
+        num_groups = self.num_groups if self.training else 1
+        batch_size, total_queries, _ = queries.embed.shape
+        num_queries = total_queries // num_groups
+
+        # Queries attend within their group in self-attention
+        queries.embed = queries.embed.reshape(batch_size * num_groups, num_queries, -1)
+        queries.pos = queries.pos.reshape(batch_size * num_groups, num_queries, -1)
+        queries.reference = queries.reference.reshape(batch_size * num_groups, num_queries, -1)
+
         # Self-attention
         v = self.norm1(queries.embed)
         q = k = v + queries.pos
         queries.embed = queries.embed + self.dropout1(self.self_attention(q, k, v, need_weights=False)[0])
+
+        # Groups attend to the same image feature in cross-attention
+        queries.embed = queries.embed.reshape(batch_size, total_queries, -1)
+        queries.pos = queries.pos.reshape(batch_size, total_queries, -1)
+        queries.reference = queries.reference.reshape(batch_size, total_queries, -1)
 
         # Cross-attention
         queries.embed = queries.embed + self.dropout2(

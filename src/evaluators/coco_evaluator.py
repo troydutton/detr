@@ -42,17 +42,17 @@ class CocoEvaluator(Evaluator):
 
         Args:
             predictions: Decoder, and optionally encoder, predictions, with keys
-                - `logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
+                - `logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
+                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_groups, num_queries, 4).
             targets: List of targets, where each target contains
                 - `image_id`: Image ID.
                 - `orig_size`: Original image size [height, width].
             accelerator: Distributed accelerator, optional.
         """
 
-        # Get prediction boxes, scores, and labels from the final layer
-        boxes = predictions.decoder.boxes[:, -1]
-        logits = predictions.decoder.logits[:, -1]
+        # Take predictions from the first group in the final layer
+        boxes = predictions.decoder.boxes[:, -1, 0]
+        logits = predictions.decoder.logits[:, -1, 0]
         scores, labels = logits.sigmoid().max(dim=-1)
 
         # Extract image ids and scales

@@ -1,12 +1,13 @@
 pretrained_weights: Null
 
-num_queries: 300
 embed_dim: 256
 ffn_dim: 2048
 num_heads: 8
 num_points: 4
 num_levels: 3
 dropout: 0.1
+num_groups: 13
+num_queries: 300
 
 backbone:
   name: convnext_tiny
@@ -28,8 +29,9 @@ encoder:
 
 decoder:
   num_layers: 6
-  two_stage: True 
+  two_stage: False 
   refine_boxes: True
+  num_groups: ${model.num_groups}
   num_queries: ${model.num_queries} 
   embed_dim: ${model.embed_dim}
   layer:
@@ -39,4 +41,5 @@ decoder:
     num_heads: ${model.num_heads}
     num_points: ${model.num_points}
     num_levels: ${model.num_levels}
+    num_groups: ${model.num_groups}
     dropout: ${model.dropout}

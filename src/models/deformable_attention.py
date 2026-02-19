@@ -127,6 +127,7 @@ class MultiHeadDeformableAttention(nn.Module):
         return nn.Module.__call__(self, *args, **kwargs)
 
 
+# Hack to fix type annotations for linear layers (i hate it here)
 class LinearType(Protocol):
     weight: Tensor
     bias: Tensor

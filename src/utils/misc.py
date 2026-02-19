@@ -1,10 +1,7 @@
 import os
-import random
 from contextlib import contextmanager, redirect_stdout
 from typing import Callable, Dict, List, Tuple, TypeVar, Union
 
-import numpy as np
-import torch
 from torch import Tensor, device
 from typing_extensions import ParamSpec
 
@@ -43,22 +40,6 @@ def send_to_device(
         return [send_to_device(element, device) for element in object]
     else:
         return object
-
-
-def set_random_seed(seed: int) -> None:
-    """
-    Set the random seed for reproducibility.
-    """
-
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.use_deterministic_algorithms(True, warn_only=True)
-    torch.backends.cudnn.deterministic = True
-
-    os.environ["PYTHONHASHSEED"] = str(seed)
-    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
 
 @contextmanager

@@ -1,11 +1,12 @@
 pretrained_weights: Null
 
-num_queries: 100
 embed_dim: 256
 ffn_dim: 2048
 num_heads: 8
 num_levels: 1
 dropout: 0.1
+num_groups: 1
+num_queries: 100
 
 backbone:
   name: convnext_tiny

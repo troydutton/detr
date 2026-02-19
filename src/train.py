@@ -5,6 +5,7 @@ from typing import Any, Dict, Union
 import hydra
 import wandb
 from accelerate import Accelerator
+from accelerate.utils import set_seed
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from torch.optim.lr_scheduler import _LRScheduler
@@ -32,6 +33,9 @@ def main(args: DictConfig) -> None:
 
     # Resolve arguments
     args: Args = OmegaConf.to_container(args, resolve=True, throw_on_missing=True)
+
+    # Reproducibility
+    set_seed(args["train"]["random_seed"], device_specific=True)
 
     # Initialize Weights & Biases
     output_dir = Path(args["train"]["output_dir"])
@@ -66,7 +70,7 @@ def main(args: DictConfig) -> None:
     )
 
     # Create model (config/model/*.yaml)
-    args["model"]["num_classes"] = train_dataset.num_classes
+    args["model"]["decoder"]["num_classes"] = train_dataset.num_classes
     model = DETR(**args["model"])
 
     # Save the arguments to the output directory
@@ -104,6 +108,7 @@ def main(args: DictConfig) -> None:
 
     del args["train"]["batch_size"]
     del args["train"]["num_workers"]
+    del args["train"]["random_seed"]
 
     # Start training
     train(

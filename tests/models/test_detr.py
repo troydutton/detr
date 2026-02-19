@@ -15,10 +15,10 @@ def test_detr_forward() -> None:
     embed_dim = 64
     num_decoder_layers = 2
     num_queries = 5
+    num_groups = 1
 
     kwargs = {
         "embed_dim": embed_dim,
-        "num_classes": num_classes,
         "backbone": {
             "name": "resnet50s",
             "embed_dim": embed_dim,
@@ -39,6 +39,8 @@ def test_detr_forward() -> None:
             "num_layers": num_decoder_layers,
             "embed_dim": embed_dim,
             "num_queries": num_queries,
+            "num_classes": num_classes,
+            "num_groups": num_groups,
             "layer": {
                 "_target_": "models.decoder.DecoderLayer",
                 "embed_dim": embed_dim,
@@ -62,12 +64,12 @@ def test_detr_forward() -> None:
     assert output.decoder.logits is not None
 
     # Check output shapes
-    expected_logits_shape = (batch_size, num_decoder_layers, num_queries, num_classes)
+    expected_logits_shape = (batch_size, num_decoder_layers, num_groups, num_queries, num_classes)
     assert (
         output.decoder.logits.shape == expected_logits_shape
     ), f"Expected logits shape {expected_logits_shape}, got {output.decoder.logits.shape}"
 
-    expected_boxes_shape = (batch_size, num_decoder_layers, num_queries, 4)
+    expected_boxes_shape = (batch_size, num_decoder_layers, num_groups, num_queries, 4)
     assert (
         output.decoder.boxes.shape == expected_boxes_shape
     ), f"Expected boxes shape {expected_boxes_shape}, got {output.decoder.boxes.shape}"
