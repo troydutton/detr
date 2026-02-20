@@ -110,7 +110,7 @@ class Backbone(nn.Module):
             multi_level_features.append(features)
             multi_level_pos.append(feature_pos)
             multi_level_reference.append(feature_reference)
-            levels.append(torch.full((width * height,), level, device=device))
+            levels.append(torch.full((width * height,), level))
             dimensions.append((width, height))
 
         # Concatenate features from all levels
@@ -118,7 +118,7 @@ class Backbone(nn.Module):
         multi_level_pos = torch.cat(multi_level_pos, dim=1)
         multi_level_reference = torch.cat(multi_level_reference, dim=1)
         dimensions = torch.tensor(dimensions, device=device)
-        levels = torch.cat(levels)
+        levels = torch.cat(levels).to(device)
 
         return Features(
             embed=multi_level_features,

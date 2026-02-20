@@ -53,7 +53,7 @@ class HungarianMatcher:
         batch_size, num_layers, num_groups, num_queries, _ = predictions.logits.shape
         device = predictions.logits.device
 
-        # TODO: Improve efficiency by batching cost calculations across images, layers, and groups
+        # TODO: Evaluate batching cost calculations across images
         batch_indices, layer_indices, group_indices, query_indices, target_indices = [], [], [], [], []
 
         for i in range(batch_size):

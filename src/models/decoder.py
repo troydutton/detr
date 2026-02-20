@@ -5,6 +5,7 @@ from typing import Optional, Tuple
 import torch
 from hydra.utils import instantiate
 from torch import Tensor, nn
+from torch.nn import Dropout, LayerNorm, Linear, Module, ModuleList, Sequential
 
 from models.backbone import Features
 from models.deformable_attention import MultiHeadDeformableAttention
@@ -20,7 +21,7 @@ class Queries:
     reference: Tensor
 
 
-class TransformerDecoder(nn.Module):
+class TransformerDecoder(Module):
     """
     Transformer decoder composed of a stack of N decoder layers.
 
@@ -43,8 +44,8 @@ class TransformerDecoder(nn.Module):
         num_classes: int,
         num_layers: int,
         num_queries: int,
-        *,
         num_groups: int = 1,
+        *,
         two_stage: bool = False,
         refine_boxes: bool = False,
         **kwargs,
@@ -61,25 +62,25 @@ class TransformerDecoder(nn.Module):
 
         # Create the bounding box and classification heads
         if self.refine_boxes:
-            self.bbox_head = nn.ModuleList([FFN(embed_dim, embed_dim, 4, 3) for _ in range(num_layers)])
+            self.bbox_head = ModuleList([FFN(embed_dim, embed_dim, 4, 3) for _ in range(num_layers)])
         else:
             self.bbox_head = FFN(embed_dim, embed_dim, 4, 3)
 
-        self.class_head = nn.Linear(embed_dim, num_classes)
+        self.class_head = Linear(embed_dim, num_classes)
 
         # Create the object query initialization components
         if self.two_stage:  # Encoder proposals as initial queries
-            self.encoder_bbox_head = FFN(embed_dim, embed_dim, output_dim=4, num_layers=3)
-            self.encoder_class_head = nn.Linear(embed_dim, num_classes)
-            self.encoder_projection = nn.Sequential(nn.Linear(embed_dim, embed_dim), nn.LayerNorm(embed_dim))
+            self.encoder_bbox_head = ModuleList([FFN(embed_dim, embed_dim, 4, 3) for _ in range(self.num_groups)])
+            self.encoder_class_head = ModuleList([Linear(embed_dim, num_classes) for _ in range(self.num_groups)])
+            self.encoder_projection = ModuleList([Sequential(Linear(embed_dim, embed_dim), LayerNorm(embed_dim)) for _ in range(self.num_groups)])  # fmt: skip
         else:  # Learnable parameters as initial queries
             self.queries = nn.Embedding(num_groups * num_queries, embed_dim)
-            self.reference_points = nn.Linear(embed_dim, 2)
-        self.pos_projection = nn.Sequential(nn.Linear(2 * embed_dim, embed_dim), nn.LayerNorm(embed_dim))
+            self.reference_points = Linear(embed_dim, 2)
+        self.pos_projection = Sequential(Linear(2 * embed_dim, embed_dim), LayerNorm(embed_dim))
 
         # Create the decoder layers
-        self.layers = nn.ModuleList([instantiate(kwargs["layer"]) for _ in range(num_layers)])
-        self.norm = nn.LayerNorm(embed_dim)
+        self.layers = ModuleList([instantiate(kwargs["layer"]) for _ in range(num_layers)])
+        self.norm = LayerNorm(embed_dim)
 
         self._initialize_weights()
 
@@ -172,12 +173,13 @@ class TransformerDecoder(nn.Module):
 
         return Queries(embed=query_embed, pos=query_pos, reference=query_ref)
 
-    def _generate_query_proposals(self, features: Features) -> Tuple[Queries, Tensor, Tensor]:
+    def _generate_query_proposals(self, features: Features, num_groups: int) -> Tuple[Queries, Tensor, Tensor]:
         """
         Generates initial object queries from the encoder features.
 
         Args:
             features: Multi-level features with shape (batch_size, num_features, embed_dim).
+            num_groups: Number of query groups to use.
 
         Returns:
             queries: Initial object queries.
@@ -188,29 +190,42 @@ class TransformerDecoder(nn.Module):
         """
 
         # Get batch information
-        batch_size, _, _ = features.embed.shape
+        batch_size, num_features, _ = features.embed.shape
         device = features.embed.device
 
-        # Project the encoder features into a separate latent space
-        feature_embed = self.encoder_projection(features.embed)
+        query_embed, query_ref = [], []
+        encoder_boxes, encoder_logits = [], []
 
-        # Predict proposal boxes, using the feature pixel's position as the center
-        # and a level-specific scale as the width and height (scale * 2^level)
-        # Boxes are refined using (x + (Δx * w), y + (Δy * h), w * exp(Δw), h * exp(Δh))
-        xy = features.reference
-        wh = torch.full_like(features.reference, 0.05) * (2**features.levels).unsqueeze(-1)
-        offsets = self.encoder_bbox_head(feature_embed)
-        xy = xy + (offsets[..., :2] * wh)
-        wh = wh * offsets[..., 2:].exp()
-        boxes = torch.cat([xy, wh], dim=-1)
+        # TODO: Optimize proposal generation by batching group calculations
+        for g in range(num_groups):
+            # Project the encoder features into a separate latent space
+            feature_embed = self.encoder_projection[g](features.embed)
 
-        # Identify the features with the highest proposal scores (max class probability)
-        logits: Tensor = self.encoder_class_head(feature_embed)
-        scores = logits.max(dim=-1).values
-        batch_indices = torch.arange(batch_size, device=device).unsqueeze(1)
-        topk_indices = scores.topk(self.num_queries, dim=1).indices
-        query_embed = feature_embed[batch_indices, topk_indices]
-        query_ref = boxes[batch_indices, topk_indices]
+            # Predict proposal boxes, using the feature pixel's position as the center
+            # and a level-specific scale as the width and height (scale * 2^level)
+            # Boxes are refined using (x + (Δx * w), y + (Δy * h), w * exp(Δw), h * exp(Δh))
+            xy = features.reference
+            wh = torch.full_like(features.reference, 0.05) * (2**features.levels).unsqueeze(-1)
+            offsets = self.encoder_bbox_head[g](feature_embed)
+            xy = xy + (offsets[..., :2] * wh)
+            wh = wh * torch.exp(offsets[..., 2:])
+            boxes = torch.cat([xy, wh], dim=-1)
+
+            # Identify the features with the highest proposal scores (max class probability)
+            logits: Tensor = self.encoder_class_head[g](feature_embed)
+            scores = logits.max(dim=-1).values
+            batch_indices = torch.arange(batch_size, device=device).unsqueeze(1)
+            topk_indices = scores.topk(self.num_queries, dim=1).indices
+
+            query_embed.append(feature_embed[batch_indices, topk_indices])
+            query_ref.append(boxes[batch_indices, topk_indices])
+            encoder_boxes.append(boxes)
+            encoder_logits.append(logits)
+
+        query_embed = torch.cat(query_embed, dim=1)
+        query_ref = torch.cat(query_ref, dim=1)
+        encoder_boxes = torch.cat(encoder_boxes, dim=1)
+        encoder_logits = torch.cat(encoder_logits, dim=1)
 
         # Generate positional embeddings from the reference boxes
         query_pos = self.pos_projection(build_ref_pos_embed(query_ref, 2 * self.embed_dim))
@@ -218,7 +233,12 @@ class TransformerDecoder(nn.Module):
         # Treat the references as fixed priors for the decoder
         query_ref = query_ref.detach()
 
-        return Queries(embed=query_embed, pos=query_pos, reference=query_ref), boxes, logits
+        # Prepare outputs
+        queries = Queries(embed=query_embed, pos=query_pos, reference=query_ref)
+        encoder_boxes = encoder_boxes.view(batch_size, 1, num_groups, num_features, -1)
+        encoder_logits = encoder_logits.view(batch_size, 1, num_groups, num_features, -1)
+
+        return queries, encoder_boxes, encoder_logits
 
     @torch.no_grad()
     def _initialize_weights(self) -> None:
@@ -230,17 +250,18 @@ class TransformerDecoder(nn.Module):
         nn.init.constant_(self.class_head.bias, bias)
 
         if self.two_stage:
-            nn.init.constant_(self.encoder_class_head.bias, bias)
+            for g in range(self.num_groups):
+                nn.init.constant_(self.encoder_class_head[g].bias, bias)
         else:
             nn.init.xavier_uniform_(self.reference_points.weight, gain=1.0)
             nn.init.zeros_(self.reference_points.bias)
 
     @take_annotation_from(forward)
     def __call__(self, *args, **kwargs):
-        return nn.Module.__call__(self, *args, **kwargs)
+        return Module.__call__(self, *args, **kwargs)
 
 
-class DecoderLayer(nn.Module):
+class DecoderLayer(Module):
     """
     Single layer of the transformer decoder.
 
@@ -264,19 +285,19 @@ class DecoderLayer(nn.Module):
         self.num_groups = num_groups
 
         # Self-attention
-        self.norm1 = nn.LayerNorm(embed_dim)
+        self.norm1 = LayerNorm(embed_dim)
         self.self_attention = nn.MultiheadAttention(embed_dim, num_heads, dropout, batch_first=True)
-        self.dropout1 = nn.Dropout(dropout)
+        self.dropout1 = Dropout(dropout)
 
         # Cross-attention
-        self.norm2 = nn.LayerNorm(embed_dim)
+        self.norm2 = LayerNorm(embed_dim)
         self.cross_attention = nn.MultiheadAttention(embed_dim, num_heads, dropout, batch_first=True)
-        self.dropout2 = nn.Dropout(dropout)
+        self.dropout2 = Dropout(dropout)
 
         # Feedforward Network
-        self.norm3 = nn.LayerNorm(embed_dim)
+        self.norm3 = LayerNorm(embed_dim)
         self.ffn = FFN(embed_dim, ffn_dim, embed_dim, 2, dropout=dropout)
-        self.dropout3 = nn.Dropout(dropout)
+        self.dropout3 = Dropout(dropout)
 
     def forward(self, queries: Queries, features: Features) -> Queries:
         """
@@ -323,10 +344,10 @@ class DecoderLayer(nn.Module):
 
     @take_annotation_from(forward)
     def __call__(self, *args, **kwargs):
-        return nn.Module.__call__(self, *args, **kwargs)
+        return Module.__call__(self, *args, **kwargs)
 
 
-class DeformableDecoderLayer(nn.Module):
+class DeformableDecoderLayer(Module):
     """
     Single layer of the transformer decoder.
 
@@ -354,19 +375,19 @@ class DeformableDecoderLayer(nn.Module):
         self.num_groups = num_groups
 
         # Self-attention
-        self.norm1 = nn.LayerNorm(embed_dim)
+        self.norm1 = LayerNorm(embed_dim)
         self.self_attention = nn.MultiheadAttention(embed_dim, num_heads, dropout, batch_first=True)
-        self.dropout1 = nn.Dropout(dropout)
+        self.dropout1 = Dropout(dropout)
 
         # Deformable cross-attention
-        self.norm2 = nn.LayerNorm(embed_dim)
+        self.norm2 = LayerNorm(embed_dim)
         self.cross_attention = MultiHeadDeformableAttention(embed_dim, num_heads, num_levels, num_points)
-        self.dropout2 = nn.Dropout(dropout)
+        self.dropout2 = Dropout(dropout)
 
         # Feedforward Network
-        self.norm3 = nn.LayerNorm(embed_dim)
+        self.norm3 = LayerNorm(embed_dim)
         self.ffn = FFN(embed_dim, ffn_dim, embed_dim, 2, dropout=dropout)
-        self.dropout3 = nn.Dropout(dropout)
+        self.dropout3 = Dropout(dropout)
 
     def forward(self, queries: Queries, features: Features) -> Queries:
         """
@@ -417,4 +438,4 @@ class DeformableDecoderLayer(nn.Module):
 
     @take_annotation_from(forward)
     def __call__(self, *args, **kwargs):
-        return nn.Module.__call__(self, *args, **kwargs)
+        return Module.__call__(self, *args, **kwargs)

@@ -29,7 +29,7 @@ encoder:
 
 decoder:
   num_layers: 6
-  two_stage: False 
+  two_stage: True
   refine_boxes: True
   num_groups: ${model.num_groups}
   num_queries: ${model.num_queries} 
