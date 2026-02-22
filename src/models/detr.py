@@ -114,6 +114,11 @@ class DETR(nn.Module):
 
         # Decode the features into object predictions
         boxes, logits, _, _ = self.decoder(features)
+
+        # Only use predictions from the final layer and first query group
+        boxes = boxes[:, -1, 0]
+        logits = logits[:, -1, 0]
+
         scores, labels = logits.sigmoid().max(dim=-1)
 
         # Filter predictions
