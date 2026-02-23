@@ -178,7 +178,7 @@ class CocoDataset(Dataset):
 
         return weights
 
-    def get_category_names(self) -> List[str]:
+    def get_categories(self) -> List[str]:
         """
         Retrieve the category names in the dataset.
 

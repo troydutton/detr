@@ -43,11 +43,12 @@ def main(args: DictConfig) -> None:
     # Ensure checkpoint is provided
     checkpoint = args["train"].get("checkpoint")
     if not checkpoint:
-        raise ValueError("Please provide a checkpoint path via 'train.checkpoint=/path/to/checkpoint.pt'")
+        raise ValueError("Please provide a checkpoint path via 'train.checkpoint=/path/to/checkpoint'")
 
     # Create model (config/model/*.yaml)
     args["model"]["pretrained_weights"] = checkpoint
-    args["model"]["num_classes"] = val_dataset.num_classes
+    args["model"]["categories"] = val_dataset.get_categories()
+    args["model"]["decoder"]["num_classes"] = val_dataset.num_classes
     model = DETR(**args["model"])
 
     # Distribute evaluation components

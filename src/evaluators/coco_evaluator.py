@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import torch
 from accelerate import Accelerator
@@ -13,7 +13,7 @@ from utils.misc import silence_stdout
 
 if TYPE_CHECKING:
     from data import Target
-    from models import ModelPredictions
+    from models import Predictions
 
 
 class CocoEvaluator(Evaluator):
@@ -36,7 +36,9 @@ class CocoEvaluator(Evaluator):
         """Reset the internal state of the evaluator."""
         self.predictions.clear()
 
-    def update(self, predictions: ModelPredictions, targets: List[Target], accelerator: Optional[Accelerator] = None) -> None:
+    def update(
+        self, predictions: Tuple[Predictions, Optional[Predictions]], targets: List[Target], accelerator: Optional[Accelerator] = None
+    ) -> None:
         """
         Update the evaluator with a batch of predictions and targets.
 
@@ -51,8 +53,9 @@ class CocoEvaluator(Evaluator):
         """
 
         # Take predictions from the first group in the final layer
-        boxes = predictions.decoder.boxes[:, -1, 0]
-        logits = predictions.decoder.logits[:, -1, 0]
+        decoder_predictions, _ = predictions
+        boxes = decoder_predictions.boxes[:, -1, 0]
+        logits = decoder_predictions.logits[:, -1, 0]
         scores, labels = logits.sigmoid().max(dim=-1)
 
         # Extract image ids and scales

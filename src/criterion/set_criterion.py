@@ -14,7 +14,7 @@ from criterion.hungarian_matcher import HungarianMatcher
 if TYPE_CHECKING:
     from criterion.hungarian_matcher import MatchIndices
     from data import Target
-    from models import ModelPredictions, Predictions
+    from models import Predictions
 
 
 class SetCriterion(Criterion):
@@ -45,7 +45,7 @@ class SetCriterion(Criterion):
 
     def __call__(
         self,
-        predictions: ModelPredictions,
+        predictions: Tuple[Predictions, Optional[Predictions]],
         targets: List[Target],
         accelerator: Optional[Accelerator] = None,
     ) -> Dict[str, Tensor]:
@@ -65,10 +65,12 @@ class SetCriterion(Criterion):
             losses: Dictionary of calculated losses.
         """
 
-        # Decoder losses
-        matched_indices = self.matcher(predictions.decoder, targets)
-        box_loss, giou_loss = self._calculate_box_losses(predictions.decoder, targets, matched_indices)
-        class_loss = self._calculate_class_loss(predictions.decoder, targets, matched_indices)
+        decoder_predictions, encoder_predictions = predictions
+
+        # Calculate loss for the decoder predictions
+        matched_indices = self.matcher(decoder_predictions, targets)
+        box_loss, giou_loss = self._calculate_box_losses(decoder_predictions, targets, matched_indices)
+        class_loss = self._calculate_class_loss(decoder_predictions, targets, matched_indices)
 
         losses = {
             "box": box_loss,
@@ -76,11 +78,11 @@ class SetCriterion(Criterion):
             "class": class_loss,
         }
 
-        # Encoder losses (if two-stage)
-        if predictions.encoder is not None:
-            matched_indices = self.matcher(predictions.encoder, targets)
-            box_loss, giou_loss = self._calculate_box_losses(predictions.encoder, targets, matched_indices)
-            class_loss = self._calculate_class_loss(predictions.encoder, targets, matched_indices)
+        # Calculate loss for the encoder predictions
+        if encoder_predictions is not None:
+            matched_indices = self.matcher(encoder_predictions, targets)
+            box_loss, giou_loss = self._calculate_box_losses(encoder_predictions, targets, matched_indices)
+            class_loss = self._calculate_class_loss(encoder_predictions, targets, matched_indices)
 
             losses["box"] += box_loss
             losses["giou"] += giou_loss

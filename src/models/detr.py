@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass
-from typing import List, Optional, Union
+from pathlib import Path
+from typing import List, Optional, Tuple, Union
 
 import torch
 from safetensors.torch import load_file
@@ -11,6 +12,7 @@ from torchvision.ops.boxes import box_convert
 from models.backbone import Backbone
 from models.decoder import TransformerDecoder
 from models.encoder import TransformerEncoder
+from utils.misc import take_annotation_from
 
 
 @dataclass
@@ -20,16 +22,11 @@ class Predictions:
 
 
 @dataclass
-class ModelPredictions:
-    decoder: Predictions
-    encoder: Optional[Predictions] = None
-
-
-@dataclass
 class Detections:
     boxes: Tensor
     labels: Tensor
     scores: Tensor
+    categories: Optional[List[str]] = None
 
 
 class DETR(nn.Module):
@@ -37,13 +34,12 @@ class DETR(nn.Module):
     Implementation of Detection Transformers orginally introduced in [End-to-End Object Detection with Transformers](https://arxiv.org/abs/2005.12872).
 
     Args:
-        embed_dim: Embedding dimension.
         pretrained_weights: Path to a pretrained weights file.
         kwargs: Arguments to construct the backbone and transformer.
             See `models.backbone.Backbone`, `models.encoder.TransformerEncoder`, and `models.decoder.TransformerDecoder`.
     """
 
-    def __init__(self, pretrained_weights: str = None, **kwargs) -> None:
+    def __init__(self, pretrained_weights: str = None, categories: List[str] = None, **kwargs) -> None:
         super().__init__()
 
         # Build the backbone, transformer encoder, and transformer decoder
@@ -51,9 +47,12 @@ class DETR(nn.Module):
         self.encoder = TransformerEncoder(**kwargs["encoder"])
         self.decoder = TransformerDecoder(**kwargs["decoder"])
 
+        # Label to category name mapping for use in predictions
+        self.categories = categories
+
         self._initialize_weights(pretrained_weights=pretrained_weights)
 
-    def forward(self, images: Tensor) -> ModelPredictions:
+    def forward(self, images: Tensor) -> Tuple[Predictions, Optional[Predictions]]:
         """
         Predict bounding boxes and class logits for a batch of input images.
 
@@ -81,7 +80,7 @@ class DETR(nn.Module):
         else:
             encoder_predictions = None
 
-        return ModelPredictions(decoder_predictions, encoder_predictions)
+        return decoder_predictions, encoder_predictions
 
     @torch.no_grad()
     def predict(
@@ -132,12 +131,17 @@ class DETR(nn.Module):
             keep = nms(box_convert(image_boxes, "cxcywh", "xyxy"), image_scores, iou_threshold)
             image_boxes, image_scores, image_labels = image_boxes[keep], image_scores[keep], image_labels[keep]
 
-            detections.append(Detections(image_boxes, image_labels, image_scores))
+            if self.categories is not None:
+                image_categories = [self.categories[label] for label in image_labels]
+            else:
+                image_categories = None
+
+            detections.append(Detections(image_boxes, image_labels, image_scores, image_categories))
 
         return detections if len(detections) > 1 else detections[0]
 
     @torch.no_grad()
-    def _initialize_weights(self, pretrained_weights: str = None) -> None:
+    def _initialize_weights(self, pretrained_weights: Union[str, Path] = None) -> None:
         # Check for BatchNorm layers
         for module_name, module in self.backbone.named_modules():
             if isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
@@ -146,11 +150,24 @@ class DETR(nn.Module):
         if pretrained_weights is None:
             return
 
+        pretrained_weights = Path(pretrained_weights)
+
+        # Attempt to find the model weights in an accelerate checkpoint directory
+        if pretrained_weights.is_dir():
+            checkpoints = sorted(
+                dir for dir in pretrained_weights.iterdir() if dir.is_dir() and len(list(dir.glob("model.safetensors"))) > 0
+            )
+
+            if not checkpoints:
+                raise FileNotFoundError(f"No checkpoint directories containing 'model.safetensors' found in '{pretrained_weights}'.")
+
+            pretrained_weights = checkpoints[-1] / "model.safetensors"
+
         logging.info(f"Loading pretrained weights from '{pretrained_weights}'.")
 
-        if pretrained_weights.endswith((".pt", ".pth")):
+        if pretrained_weights.suffix in [".pt", ".pth"]:
             state_dict = torch.load(pretrained_weights, map_location="cpu")
-        elif pretrained_weights.endswith(".safetensors"):
+        elif pretrained_weights.suffix == ".safetensors":
             state_dict = load_file(pretrained_weights, device="cpu")
         else:
             raise ValueError(f"Unsupported pretrained weights format: {pretrained_weights}")
@@ -162,3 +179,7 @@ class DETR(nn.Module):
 
         if incompatible.unexpected_keys:
             logging.warning(f"Unexpected keys when loading pretrained weights: {incompatible.unexpected_keys}")
+
+    @take_annotation_from(forward)
+    def __call__(self, *args, **kwargs):
+        return nn.Module.__call__(self, *args, **kwargs)

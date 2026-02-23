@@ -70,6 +70,7 @@ def main(args: DictConfig) -> None:
     )
 
     # Create model (config/model/*.yaml)
+    args["model"]["categories"] = train_dataset.get_categories()
     args["model"]["decoder"]["num_classes"] = train_dataset.num_classes
     model = DETR(**args["model"])
 

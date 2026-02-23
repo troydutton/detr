@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Dict, List
+from ast import Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 from torch import Tensor
 
 if TYPE_CHECKING:
     from data import Target
-    from models import ModelPredictions
+    from models.detr import Predictions
 
 
 class Criterion(ABC):
     @abstractmethod
-    def __call__(self, predictions: ModelPredictions, targets: List[Target]) -> Dict[str, Tensor]: ...
+    def __call__(self, predictions: Tuple[Predictions, Optional[Predictions]], targets: List[Target]) -> Dict[str, Tensor]: ...
