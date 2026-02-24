@@ -10,7 +10,7 @@ from torch.nn import Dropout, LayerNorm, Linear, Module, ModuleList, Sequential
 from models.backbone import Features
 from models.deformable_attention import MultiHeadDeformableAttention
 from models.layers import FFN
-from models.positional_embedding import build_ref_pos_embed
+from models.positional_embedding import build_pos_embed
 from utils.misc import take_annotation_from
 
 
@@ -76,7 +76,7 @@ class TransformerDecoder(Module):
         else:  # Learnable parameters as initial queries
             self.queries = nn.Embedding(num_groups * num_queries, embed_dim)
             self.reference_points = Linear(embed_dim, 2)
-        self.pos_projection = Sequential(Linear(2 * embed_dim, embed_dim), LayerNorm(embed_dim))
+        self.pos_projection = FFN(2 * embed_dim, embed_dim, embed_dim, 2)
 
         # Create the decoder layers
         self.layers = ModuleList([instantiate(kwargs["layer"]) for _ in range(num_layers)])
@@ -129,7 +129,7 @@ class TransformerDecoder(Module):
             # Refine the reference boxes and positional embeddings for the next layer
             if self.refine_boxes:
                 queries.reference = layer_boxes.detach()
-                queries.pos = self.pos_projection(build_ref_pos_embed(queries.reference, 2 * self.embed_dim))
+                queries.pos = self.pos_projection(build_pos_embed(queries.reference, 2 * self.embed_dim))
 
             # Predict class logits
             layer_logits = self.class_head(query_embed)
@@ -164,7 +164,7 @@ class TransformerDecoder(Module):
         query_ref = torch.cat([feature_xy, feature_wh], dim=-1)
 
         # Generate positional embeddings from reference boxes
-        query_pos: Tensor = self.pos_projection(build_ref_pos_embed(query_ref, 2 * self.embed_dim))
+        query_pos: Tensor = self.pos_projection(build_pos_embed(query_ref, 2 * self.embed_dim))
 
         # Expand the queries across the batch size
         query_embed = query_embed.expand(batch_size, -1, -1)
@@ -228,7 +228,7 @@ class TransformerDecoder(Module):
         encoder_logits = torch.cat(encoder_logits, dim=1)
 
         # Generate positional embeddings from the reference boxes
-        query_pos = self.pos_projection(build_ref_pos_embed(query_ref, 2 * self.embed_dim))
+        query_pos = self.pos_projection(build_pos_embed(query_ref, 2 * self.embed_dim))
 
         # Treat the references as fixed priors for the decoder
         query_ref = query_ref.detach()

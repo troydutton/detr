@@ -85,46 +85,49 @@ class Backbone(nn.Module):
         backbone_features = self.backbone(images)  # List of features with shape (batch_size, channels, feature_height, feature_width)
 
         # Build multi-level features, positional embeddings, and reference points for the transformer
-        multi_level_features, multi_level_pos, multi_level_reference, levels, dimensions = [], [], [], [], []
+        all_features, all_pos, all_references, all_levels, dimensions = [], [], [], [], []
 
         for level, (features, projection, level_pos) in enumerate(zip(backbone_features, self.projections, self.level_pos.weight)):
             _, _, height, width = features.shape
 
             # Project into the desired embedding dimension
             features: Tensor = projection(features)
-
-            # Build positional embeddings for this level, adding the learnable level embedding
-            feature_pos = build_pos_embed(features) + level_pos.view(1, self.embed_dim, 1, 1)
+            features = features.flatten(2).transpose(1, 2)
 
             # Build reference points (center of each pixel normalized to [0, 1])
             x = torch.linspace(0.5, width - 0.5, width, device=device) / width
             y = torch.linspace(0.5, height - 0.5, height, device=device) / height
             feature_reference = torch.stack(torch.meshgrid(x, y, indexing="xy"), dim=-1)
-            feature_reference = feature_reference.repeat(batch_size, 1, 1, 1)  # (batch_size, height, width, 2)
+            feature_reference = feature_reference.reshape(1, width * height, 2)
 
-            # Collapse the spatial dimension
-            features = features.flatten(2).transpose(1, 2)
-            feature_pos = feature_pos.flatten(2).transpose(1, 2)
-            feature_reference = feature_reference.flatten(1, 2)
+            # Build positional embeddings for this level, adding the learnable level embedding
+            feature_pos = build_pos_embed(feature_reference, self.embed_dim) + level_pos.view(1, 1, self.embed_dim)
 
-            multi_level_features.append(features)
-            multi_level_pos.append(feature_pos)
-            multi_level_reference.append(feature_reference)
-            levels.append(torch.full((width * height,), level))
+            # Repeat positional information across the batch (batch_size, height * width, -1)
+            feature_reference = feature_reference.repeat(batch_size, 1, 1)
+            feature_pos = feature_pos.repeat(batch_size, 1, 1)
+
+            # Keep track of the level each feature came from
+            levels = torch.full((width * height,), level, device=device)
+
+            all_features.append(features)
+            all_pos.append(feature_pos)
+            all_references.append(feature_reference)
+            all_levels.append(levels)
             dimensions.append((width, height))
 
         # Concatenate features from all levels
-        multi_level_features = torch.cat(multi_level_features, dim=1)
-        multi_level_pos = torch.cat(multi_level_pos, dim=1)
-        multi_level_reference = torch.cat(multi_level_reference, dim=1)
+        all_features = torch.cat(all_features, dim=1)
+        all_pos = torch.cat(all_pos, dim=1)
+        all_references = torch.cat(all_references, dim=1)
+        all_levels = torch.cat(all_levels, dim=0)
         dimensions = torch.tensor(dimensions, device=device)
-        levels = torch.cat(levels).to(device)
 
         return Features(
-            embed=multi_level_features,
-            pos=multi_level_pos,
-            reference=multi_level_reference,
-            levels=levels,
+            embed=all_features,
+            pos=all_pos,
+            reference=all_references,
+            levels=all_levels,
             dimensions=dimensions,
         )
 
