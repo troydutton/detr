@@ -125,8 +125,7 @@ def train_one_epoch(
 
         # Step the learning rate scheduler every update
         scheduler.step()
-
-        losses = {k: accelerator.gather(v).mean().item() for k, v in losses.items()}
+        losses = {k: torch.mean(accelerator.gather(v)).item() for k, v in losses.items()}
 
         # Log the loss
         if accelerator.is_main_process:
@@ -175,9 +174,9 @@ def evaluate(
         with accelerator.autocast():
             predictions = model(images)
 
-            batch_losses = criterion(predictions, targets)
+            batch_losses = criterion(predictions, targets, accelerator)
 
-        losses = {k: losses.get(k, 0) + accelerator.gather_for_metrics(v).mean().item() for k, v in batch_losses.items()}
+        losses = {k: losses.get(k, 0) + torch.mean(accelerator.gather_for_metrics(v)).item() for k, v in batch_losses.items()}
 
         # Update the evaluator
         evaluator.update(predictions, targets, accelerator)

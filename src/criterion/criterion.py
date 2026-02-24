@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from ast import Tuple
 from typing import TYPE_CHECKING, Dict, List, Optional
 
+from accelerate import Accelerator
 from torch import Tensor
 
 if TYPE_CHECKING:
@@ -13,4 +14,6 @@ if TYPE_CHECKING:
 
 class Criterion(ABC):
     @abstractmethod
-    def __call__(self, predictions: Tuple[Predictions, Optional[Predictions]], targets: List[Target]) -> Dict[str, Tensor]: ...
+    def __call__(
+        self, predictions: Tuple[Predictions, Optional[Predictions]], targets: List[Target], accelerator: Accelerator
+    ) -> Dict[str, Tensor]: ...
