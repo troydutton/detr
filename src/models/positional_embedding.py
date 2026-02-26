@@ -4,7 +4,7 @@ import torch
 from torch import Tensor
 
 
-def build_pos_embed(references: Tensor, num_channels: int, temperature: float = 10000.0) -> Tensor:
+def build_pos_embed(references: Tensor, num_channels: int, temperature: float = 20.0) -> Tensor:
     """
     Generates sinusoidal positional embeddings for reference points/boxes.
 

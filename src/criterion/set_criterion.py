@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 from accelerate import Accelerator
 from torch import Tensor
-from torchvision.ops.boxes import box_convert, generalized_box_iou
+from torchvision.ops.boxes import box_convert, box_iou, generalized_box_iou
 
 from criterion.criterion import Criterion
 from criterion.hungarian_matcher import HungarianMatcher
@@ -152,7 +152,14 @@ class SetCriterion(Criterion):
         matched_indices: MatchIndices,
     ) -> Tensor:
         """
-        Calculate the classification loss focal between matched predictions and target labels.
+        Calculate the classification loss between predictions and target labels.
+
+        Uses varifocal loss which assigns IoU targets for matched predictions, and zero
+        targets for unmatched predictions. Matched predictions are weighted by their IoU,
+        while unmatched predictions are weighted according to the normal focal loss schema.
+
+        For matched predictions:   - iou * (iou * log(p) + (1 - iou) * log(1 - p))
+        For unmatched predictions: - (1 - α) * (p ** γ) * log(1 - p)
 
         Args:
             predictions: Model predictions, with keys
@@ -167,23 +174,32 @@ class SetCriterion(Criterion):
             class_loss: Classification loss (summed).
         """
 
-        # We retain all  predictions to supervise unmatched predictions
+        # Get classification predictions and targets
         prediction_logits = predictions.logits
         prediction_probs = prediction_logits.sigmoid()
 
-        # Build one-hot encoded target labels for the matched predictions
         prediction_indices, target_indices = matched_indices
         target_labels = torch.cat([t["labels"][i] for t, i in zip(targets, target_indices)])  # (num_matches,)
 
-        one_hot_target_labels = torch.zeros_like(prediction_probs)
-        one_hot_target_labels[*prediction_indices, target_labels] = 1.0
+        # Calculate IoU for matched predictions
+        with torch.no_grad():
+            prediction_boxes = predictions.boxes[prediction_indices]  # (num_matches, 4)
+            target_boxes = torch.cat([t["boxes"][i] for t, i in zip(targets, target_indices)])  # (num_matches, 4)
 
-        # Numerically stable version of α * (1 - prob) ** γ * -prob.log()
-        pos_class_cost = self.alpha * ((1 - prediction_probs) ** self.gamma) * (-F.logsigmoid(prediction_logits))
+            prediction_boxes = box_convert(prediction_boxes, "cxcywh", "xyxy")
+            target_boxes = box_convert(target_boxes, "cxcywh", "xyxy")
+            iou = box_iou(prediction_boxes, target_boxes).diag()
 
-        # Numerically stable version of (1 - α) * prob ** γ * -(1 - prob).log()
-        neg_class_cost = (1 - self.alpha) * (prediction_probs**self.gamma) * (-F.logsigmoid(-prediction_logits))
+        # Build targets (IoU for matched predictions, 0 for unmatched)
+        soft_target_labels = torch.zeros_like(prediction_probs)
+        soft_target_labels[*prediction_indices, target_labels] = iou.to(soft_target_labels.dtype)
 
-        class_loss = (pos_class_cost * one_hot_target_labels + neg_class_cost * (1 - one_hot_target_labels)).sum()
+        # Build weights (IoU for matched predictions, focal weights for unmatched)
+        weights = (1 - self.alpha) * (prediction_probs**self.gamma)
+        weights[*prediction_indices, target_labels] = iou.to(weights.dtype)
+
+        # Calculate the class loss
+        bce_loss = F.binary_cross_entropy_with_logits(prediction_logits, soft_target_labels, reduction="none")
+        class_loss = (weights * bce_loss).sum()
 
         return class_loss
