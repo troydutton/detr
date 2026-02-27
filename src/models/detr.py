@@ -9,6 +9,7 @@ from torch import Tensor, nn
 from torchvision.ops import nms
 from torchvision.ops.boxes import box_convert
 
+from data.coco_dataset import Target
 from models.backbone import Backbone
 from models.decoder import TransformerDecoder
 from models.encoder import TransformerEncoder
@@ -52,15 +53,16 @@ class DETR(nn.Module):
 
         self._initialize_weights(pretrained_weights=pretrained_weights)
 
-    def forward(self, images: Tensor) -> Tuple[Predictions, Optional[Predictions]]:
+    def forward(self, images: Tensor, targets: List[Target] = None) -> Tuple[Predictions, Optional[Predictions], Optional[Predictions]]:
         """
         Predict bounding boxes and class logits for a batch of input images.
 
         Args:
-            images: A batch of images with shape (batch, channels, height, width).
+            images: Batch of images with shape (batch, channels, height, width).
+            targets: List of targets for each image, optional.
 
         Returns:
-            predictions: Decoder, and optionally encoder predictions, with normalized CXCYWH `boxes` and class `logits`.
+            predictions: Decoder, optionally encoder, and optionally denoising query predictions, with normalized CXCYWH `boxes` and class `logits`.
         """
 
         # Extract image features
@@ -70,17 +72,21 @@ class DETR(nn.Module):
         features = self.encoder(features)
 
         # Decode the features into object predictions
-        boxes, logits, encoder_boxes, encoder_logits = self.decoder(features)
+        boxes, logits, encoder_boxes, encoder_logits, denoise_boxes, denoise_logits = self.decoder(features, targets=targets)
 
         decoder_predictions = Predictions(boxes, logits)
 
-        # Supervise encoder predictions if two-stage is enabled
-        if self.decoder.two_stage:
-            encoder_predictions = Predictions(encoder_boxes, encoder_logits)
-        else:
-            encoder_predictions = None
+        encoder_predictions, denoise_predictions = None, None
 
-        return decoder_predictions, encoder_predictions
+        # Supervise encoder predictions if enabled
+        if self.decoder.two_stage and self.training and encoder_boxes is not None and encoder_logits is not None:
+            encoder_predictions = Predictions(encoder_boxes, encoder_logits)
+
+        # Supervised denoising predictions if enabled
+        if self.decoder.denoise_queries and self.training and denoise_boxes is not None and denoise_logits is not None:
+            denoise_predictions = Predictions(denoise_boxes, denoise_logits)
+
+        return decoder_predictions, encoder_predictions, denoise_predictions
 
     @torch.no_grad()
     def predict(
@@ -112,7 +118,7 @@ class DETR(nn.Module):
         features = self.encoder(features)
 
         # Decode the features into object predictions
-        boxes, logits, _, _ = self.decoder(features)
+        boxes, logits, _, _, _, _ = self.decoder(features, targets=None)
 
         # Only use predictions from the final layer and first query group
         boxes = boxes[:, -1, 0]

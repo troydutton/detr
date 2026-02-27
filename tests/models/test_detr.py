@@ -58,7 +58,7 @@ def test_detr_forward() -> None:
     images = torch.randn(batch_size, 3, 224, 224)
 
     # Forward pass
-    output, _ = model(images)
+    output, encoder_output, denoise_output = model(images)
 
     # Check output content
     assert output.boxes is not None

@@ -37,13 +37,16 @@ class CocoEvaluator(Evaluator):
         self.predictions.clear()
 
     def update(
-        self, predictions: Tuple[Predictions, Optional[Predictions]], targets: List[Target], accelerator: Optional[Accelerator] = None
+        self,
+        predictions: Tuple[Predictions, Optional[Predictions], Optional[Predictions]],
+        targets: List[Target],
+        accelerator: Optional[Accelerator] = None,
     ) -> None:
         """
         Update the evaluator with a batch of predictions and targets.
 
         Args:
-            predictions: Decoder, and optionally encoder, predictions, with keys
+            predictions: Decoder, optionally encoder, and optionally denoise predictions, with keys
                 - `logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
                 - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_groups, num_queries, 4).
             targets: List of targets, where each target contains
@@ -53,7 +56,7 @@ class CocoEvaluator(Evaluator):
         """
 
         # Take predictions from the first group in the final layer
-        decoder_predictions, _ = predictions
+        decoder_predictions, _, _ = predictions
         boxes = decoder_predictions.boxes[:, -1, 0]
         logits = decoder_predictions.logits[:, -1, 0]
         scores, labels = logits.sigmoid().max(dim=-1)

@@ -115,7 +115,7 @@ def train_one_epoch(
 
         # Forward pass and loss computation
         with accelerator.autocast():
-            predictions = model(images)
+            predictions = model(images, targets)
             losses = criterion(predictions, targets, accelerator)
 
         # Backward pass & optimizer step

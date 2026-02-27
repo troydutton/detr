@@ -2,15 +2,15 @@ defaults:
   - hydra: simple
   - dataset: coco
   - transforms: nano
-  - model: ddetr
-  - optimizer: ddetr 
-  - scheduler: ddetr
-  - criterion: ddetr
+  - model: dino
+  - optimizer: dino 
+  - scheduler: dino
+  - criterion: dino 
   - _self_
 
 train:
   output_dir: /path/to/output/dir
-  num_epochs: 50 
+  num_epochs: 12 
   batch_size: 8
   num_workers: 6
   save_period: 10
