@@ -27,6 +27,8 @@ dependencies:
   - black
   - pytest
   - pre-commit
+  - nvtop
+  - htop
   
   - pip:
     - torch
