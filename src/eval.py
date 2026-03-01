@@ -55,8 +55,7 @@ def main(args: DictConfig) -> None:
     model, val_data = accelerator.prepare(model, val_data)
 
     # Create criterion (config/criterion/*.yaml)
-    class_weights = val_dataset.calculate_class_weights(beta=args["criterion"].pop("beta"))
-    criterion: Criterion = instantiate(args["criterion"], class_weights=class_weights)
+    criterion: Criterion = instantiate(args["criterion"])
 
     # Create evaluator
     evaluator: CocoEvaluator = CocoEvaluator(coco_targets=val_dataset.coco)

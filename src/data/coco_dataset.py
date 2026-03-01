@@ -146,38 +146,6 @@ class CocoDataset(Dataset):
 
         return target
 
-    def calculate_class_weights(self, *, beta: float = 0.5) -> Tensor:
-        """
-        Calculates class weights based on their frequency.
-
-        Specifically the weight for class i is given by w_i = (Σ n_j) / ((Σ n_j^(1-β)) * n_i^β))
-        where n_i is the number of samples in class i.
-
-        Args:
-            beta: Power-law reweighting factor, β < 1 → smoother weights, β > 1 → more extreme weights.
-
-        Returns:
-            class_weights: Weights for each class with shape (num_classes)
-        """
-
-        logging.info(f"Calculating class weights with {beta=}.")
-
-        # Count the number of occurences of each class
-        frequencies = torch.zeros(self.num_classes)
-
-        for annotation in self.coco.anns.values():
-            frequencies[self.category_id_to_label[annotation["category_id"]]] += 1
-
-        # Normalization factor s.t. the expected weight is 1
-        # When β=1 this reduces to  (Σ n_i) / num_classes
-        k = frequencies.sum() / frequencies.pow(1 - beta).sum()
-
-        # Weights are inversely proportional to frequency
-        weights = torch.ones_like(frequencies)
-        weights[frequencies > 0] = k * frequencies[frequencies > 0].pow(-beta)
-
-        return weights
-
     def get_categories(self) -> List[str]:
         """
         Retrieve the category names in the dataset.
