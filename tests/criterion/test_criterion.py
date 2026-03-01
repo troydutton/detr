@@ -1,12 +1,12 @@
 import torch
 
-from criterion import SetCriterion
+from criterion import Criterion
 from models import Predictions
 
 
-def test_set_criterion_single_layer() -> None:
+def test_criterion_single_layer() -> None:
     """
-    Test the forward pass of the SetCriterion with single layer predictions.
+    Test the forward pass of the criterion with single layer predictions.
     """
     # Test Parameters
     batch_size = 2
@@ -35,7 +35,7 @@ def test_set_criterion_single_layer() -> None:
 
         targets.append({"labels": labels, "boxes": boxes})
 
-    criterion = SetCriterion(loss_weights=loss_weights)
+    criterion = Criterion(loss_weights=loss_weights)
 
     losses = criterion(predictions, targets)
 
@@ -45,9 +45,9 @@ def test_set_criterion_single_layer() -> None:
         assert loss_name in losses, f"{loss_name} loss not computed."
 
 
-def test_set_criterion_multi_layer() -> None:
+def test_criterion_multi_layer() -> None:
     """
-    Test the forward pass of the SetCriterion with multi-layer predictions.
+    Test the forward pass of the criterion with multi-layer predictions.
     Verifies that losses are computed across all decoder layers.
     """
     # Test Parameters
@@ -77,7 +77,7 @@ def test_set_criterion_multi_layer() -> None:
 
         targets.append({"labels": labels, "boxes": boxes})
 
-    criterion = SetCriterion(loss_weights=loss_weights)
+    criterion = Criterion(loss_weights=loss_weights)
 
     losses = criterion(predictions, targets)
 
@@ -91,9 +91,9 @@ def test_set_criterion_multi_layer() -> None:
         assert torch.isfinite(loss_value), f"{loss_name} loss is not finite: {loss_value}"
 
 
-def test_set_criterion_empty_targets() -> None:
+def test_criterion_empty_targets() -> None:
     """
-    Test the forward pass of the SetCriterion with empty targets.
+    Test the forward pass of the criterion with empty targets.
     Verifies that division by zero is handled (currently results in NaN).
     """
     # Test Parameters
@@ -120,7 +120,7 @@ def test_set_criterion_empty_targets() -> None:
         {"labels": torch.empty(0, dtype=torch.long), "boxes": torch.empty(0, 4)},
     ]
 
-    criterion = SetCriterion(loss_weights=loss_weights)
+    criterion = Criterion(loss_weights=loss_weights)
 
     losses = criterion(predictions, targets)
 
@@ -132,9 +132,9 @@ def test_set_criterion_empty_targets() -> None:
         assert torch.isfinite(losses[loss_name]), f"{loss_name} loss should be finite."
 
 
-def test_set_criterion_single_target() -> None:
+def test_criterion_single_target() -> None:
     """
-    Test the forward pass of the SetCriterion with a single target per image.
+    Test the forward pass of the criterion with a single target per image.
     """
     # Test Parameters
     batch_size = 2
@@ -162,7 +162,7 @@ def test_set_criterion_single_target() -> None:
 
         targets.append({"labels": labels, "boxes": boxes})
 
-    criterion = SetCriterion(loss_weights=loss_weights)
+    criterion = Criterion(loss_weights=loss_weights)
 
     losses = criterion(predictions, targets)
 

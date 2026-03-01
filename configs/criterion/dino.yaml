@@ -1,9 +1,9 @@
-_target_: criterion.set_criterion.SetCriterion
+_target_: criterion.Criterion
 
 loss_weights:
   box: 5.0
   giou: 2.0
-  class: 1.0
+  class: 2.0
 
 alpha: 0.25
 gamma: 2.0

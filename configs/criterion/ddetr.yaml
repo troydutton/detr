@@ -1,4 +1,4 @@
-_target_: criterion.set_criterion.SetCriterion
+_target_: criterion.Criterion
 
 loss_weights:
   box: 5.0

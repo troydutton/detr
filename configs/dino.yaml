@@ -9,10 +9,10 @@ defaults:
   - _self_
 
 train:
-  output_dir: /path/to/output/dir
+  output_dir: /path/to/output
   num_epochs: 24
   batch_size: 4
-  num_workers: 6
+  num_workers: 4
   save_period: 10
   max_grad_norm: 0.1
   random_seed: 42

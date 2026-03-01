@@ -11,8 +11,8 @@ defaults:
 train:
   output_dir: /path/to/output/dir
   num_epochs: 50 
-  batch_size: 8
-  num_workers: 6
+  batch_size: 4
+  num_workers: 4
   save_period: 10
   max_grad_norm: 0.1
   random_seed: 42
