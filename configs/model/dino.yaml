@@ -4,13 +4,13 @@ embed_dim: 256
 ffn_dim: 2048
 num_heads: 8
 num_points: 4
-num_levels: 3
+num_levels: 4
 dropout: 0.1
 num_groups: 13
 num_queries: 300
 pos_noise_scale: 0.4
 neg_noise_scale: 0.8
-label_noise_prob: 0.5
+label_noise_prob: 0.25
 
 
 backbone:
