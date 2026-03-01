@@ -7,4 +7,3 @@ loss_weights:
 
 alpha: 0.25
 gamma: 2.0
-beta: 0.5
