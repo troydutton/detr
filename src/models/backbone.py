@@ -37,8 +37,8 @@ class Backbone(nn.Module):
         self.embed_dim = embed_dim
         self.num_levels = num_levels
 
-        # Take the last `num_levels` feature maps from the backbone
-        out_indices = list(range(-num_levels, 0))
+        # Take one less level from the backbone because we use an extra projection on the final feature map
+        out_indices = list(range(-max(num_levels - 1, 1), 0))
 
         # Build the backbone in feature-only mode
         self.backbone: BackboneType = timm.create_model(
@@ -50,9 +50,14 @@ class Backbone(nn.Module):
 
         # Create projections from each backbone output to the desired embedding dimension
         self.projections = nn.ModuleList()
+
         for i in out_indices:
             in_channels = self.backbone.feature_info[i]["num_chs"]
             self.projections.append(nn.Conv2d(in_channels, embed_dim, kernel_size=1))
+
+        if num_levels > 1:
+            in_channels = self.backbone.feature_info[-1]["num_chs"]
+            self.projections.append(nn.Conv2d(in_channels, embed_dim, kernel_size=3, stride=2, padding=1))
 
         # Per-level positional embeddings
         self.level_pos = nn.Embedding(num_levels, embed_dim)
@@ -70,7 +75,7 @@ class Backbone(nn.Module):
 
         Returns:
             features: Multi-level features with the following fields
-            - `features`: Embeddings with shape (batch_size, num_features, embed_dim).
+            - `embed`: Embeddings with shape (batch_size, num_features, embed_dim).
             - `pos`: Positional embeddings with shape (batch_size, num_features, embed_dim).
             - `reference`: Reference points for the features with shape (batch_size, num_features, 2).
             - `levels`: Level index for each feature with shape (num_features,).
@@ -84,14 +89,19 @@ class Backbone(nn.Module):
         # Extract features
         backbone_features = self.backbone(images)  # List of features with shape (batch_size, channels, feature_height, feature_width)
 
-        # Build multi-level features, positional embeddings, and reference points for the transformer
+        # In multi-scale, an additional downsampled feature is created from the final backbone feature.
+        if self.num_levels > 1:
+            backbone_features.append(backbone_features[-1])
+
+        # Build multi-level features for the transformer encoder
         all_features, all_pos, all_references, all_levels, dimensions = [], [], [], [], []
 
         for level, (features, projection, level_pos) in enumerate(zip(backbone_features, self.projections, self.level_pos.weight)):
-            _, _, height, width = features.shape
-
             # Project into the desired embedding dimension
             features: Tensor = projection(features)
+
+            # Flatten the spatial dimension
+            _, _, height, width = features.shape
             features = features.flatten(2).transpose(1, 2)
 
             # Build reference points (center of each pixel normalized to [0, 1])
