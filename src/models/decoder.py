@@ -144,20 +144,22 @@ class TransformerDecoder(Module):
         if self.training and self.denoise_queries:
             queries = self._generate_denoising_queries(queries, targets)
 
+        # Maintain an undetached copy for multi-layer refinement
+        reference_undetach = queries.reference
+
         # Iteratively decode the object queries
         boxes, logits = [], []
         for layer in self.layers:
             queries: Queries = layer(queries, features)
 
-            # Predict bounding boxes (x + (Δx * w), y + (Δy * h), w * exp(Δw), h * exp(Δh))
+            # Update the reference boxes, using the undetached references for prediction
             offsets = self.bbox_head(query_embed := self.norm(queries.embed))
-            xy = queries.reference[..., :2] + (offsets[..., :2] * queries.reference[..., 2:])
-            wh = queries.reference[..., 2:] * offsets[..., 2:].exp()
-            layer_boxes = torch.cat([xy, wh], dim=-1)
+            layer_boxes = self._update_references(reference_undetach, offsets)
 
             # Refine the reference boxes and positional embeddings for the next layer
             if self.refine_boxes:
-                queries.reference = layer_boxes.detach()
+                reference_undetach = self._update_references(queries.reference, offsets)
+                queries.reference = reference_undetach.detach()
                 queries.pos = self.pos_projection(build_pos_embed(queries.reference, 2 * self.embed_dim))
 
             # Predict class logits
@@ -257,13 +259,10 @@ class TransformerDecoder(Module):
 
             # Predict proposal boxes, using the feature pixel's position as the center
             # and a level-specific scale as the width and height (scale * 2^level)
-            # Boxes are refined using (x + (Δx * w), y + (Δy * h), w * exp(Δw), h * exp(Δh))
-            xy = features.reference
             wh = torch.full_like(features.reference, 0.05) * (2**features.levels).unsqueeze(-1)
+            references = torch.cat([features.reference, wh], dim=-1)
             offsets = self.encoder_bbox_head[g](feature_embed)
-            xy = xy + (offsets[..., :2] * wh)
-            wh = wh * torch.exp(offsets[..., 2:])
-            boxes = torch.cat([xy, wh], dim=-1)
+            boxes = self._update_references(references, offsets)
 
             # Identify the features with the highest proposal scores (max class probability)
             logits: Tensor = self.encoder_class_head[g](feature_embed)
@@ -314,36 +313,33 @@ class TransformerDecoder(Module):
         # Get batch information
         device = queries.embed.device
         batch_size, num_object_queries, _ = queries.embed.shape
-        max_objects = max(len(target["labels"]) for target in targets)
+        objects_per_image = [len(target["labels"]) for target in targets]
 
         # Skip denoising if there are no objects in the batch
-        if max_objects == 0:
+        if sum(objects_per_image) == 0:
             return queries
 
-        # We dynamically adjust the number of denoising query groups to
-        # ensure a constant number of denoising queries across batches
-        num_denoise_groups = self.num_queries // (2 * max_objects)
-        max_queries = num_denoise_groups * (2 * max_objects)
-
         # Generate noisy versions of the target boxes and labels
-        query_embed = torch.zeros(batch_size, max_queries, self.embed_dim, device=device)
-        query_pos = torch.zeros(batch_size, max_queries, self.embed_dim, device=device)
-        query_ref = torch.zeros(batch_size, max_queries, 4, device=device)
-        padding_mask = torch.ones(batch_size, max_queries, dtype=torch.bool, device=device)
-        attention_mask = torch.ones(batch_size, max_queries, max_queries, dtype=torch.bool, device=device)
+        query_embed = torch.zeros(batch_size, self.num_queries, self.embed_dim, device=device)
+        query_pos = torch.zeros(batch_size, self.num_queries, self.embed_dim, device=device)
+        query_ref = torch.zeros(batch_size, self.num_queries, 4, device=device)
+        padding_mask = torch.ones(batch_size, self.num_queries, dtype=torch.bool, device=device)
+        attention_mask = torch.ones(batch_size, self.num_queries, self.num_queries, dtype=torch.bool, device=device)
 
-        for i, target in enumerate(targets):
+        for i, (target, num_objects) in enumerate(zip(targets, objects_per_image)):
             boxes, labels = target["boxes"], target["labels"]
-            num_objects = len(labels)
 
-            # Skip processing if there are no objects in the image
-            if len(labels) == 0:
+            if num_objects == 0:
                 continue
+
+            # Adjust the number of denoising groups to fill the allocated space,
+            # each group contains a positive and a negative copy of each object
+            num_denoise_groups = self.num_queries // (2 * num_objects)
+            num_queries = num_denoise_groups * 2 * num_objects
 
             # Repeat the boxes and labels for each denoising group
             boxes = boxes.repeat(2 * num_denoise_groups, 1)
             labels = labels.repeat(2 * num_denoise_groups)
-            num_queries = len(labels)
 
             # Convert to xyxy format for easier scaling
             boxes = boxes.reshape(num_denoise_groups, 2, num_objects, 4)
@@ -380,8 +376,9 @@ class TransformerDecoder(Module):
             attention_mask[i, :num_queries, :num_queries] = denoise_group_indices[:, None] != denoise_group_indices[None, :]
 
         # Preserve the original object query masks
-        full_padding_mask = torch.ones(batch_size, num_object_queries + max_queries, dtype=torch.bool, device=device)
-        full_attention_mask = torch.ones(batch_size, num_object_queries + max_queries, num_object_queries + max_queries, dtype=torch.bool, device=device)  # fmt: skip
+        num_queries = num_object_queries + self.num_queries
+        full_padding_mask = torch.ones(batch_size, num_queries, dtype=torch.bool, device=device)
+        full_attention_mask = torch.ones(batch_size, num_queries, num_queries, dtype=torch.bool, device=device)
         full_padding_mask[..., :num_object_queries] = queries.padding_mask
         full_attention_mask[..., :num_object_queries, :num_object_queries] = queries.attention_mask
         full_padding_mask[..., num_object_queries:] = padding_mask
@@ -398,6 +395,25 @@ class TransformerDecoder(Module):
         queries.attention_mask = full_attention_mask
 
         return queries
+
+    def _update_references(self, references: Tensor, offsets: Tensor) -> Tensor:
+        """
+        Updates the reference boxes using the predicted offsets.
+
+        The updated reference boxes are defined as (x + (Δx * w), y + (Δy * h), w * exp(Δw), h * exp(Δh)).
+
+        Args:
+            references: Current reference boxes with shape (batch_size, num_queries, 4).
+            offsets: Predicted offsets with shape (batch_size, num_queries, 4).
+
+        Returns:
+            updated_references: Updated reference boxes with shape (batch_size, num_queries, 4).
+        """
+
+        xy = references[..., :2] + (offsets[..., :2] * references[..., 2:])
+        wh = references[..., 2:] * offsets[..., 2:].exp()
+
+        return torch.cat([xy, wh], dim=-1)
 
     @torch.no_grad()
     def _initialize_weights(self) -> None:
