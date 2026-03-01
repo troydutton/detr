@@ -125,7 +125,7 @@ def train_one_epoch(
 
         # Step the learning rate scheduler every update
         scheduler.step()
-        losses = {k: torch.mean(accelerator.gather(v)).item() for k, v in losses.items()}
+        losses = {k: torch.mean(accelerator.gather(v.detach())).item() for k, v in losses.items()}
 
         # Log the loss
         if accelerator.is_main_process:
