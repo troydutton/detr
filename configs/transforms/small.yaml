@@ -1,9 +1,10 @@
+
 train:
   _target_: data.make_transformations
   split: train
-  resolution: 384 
+  resolution: 512
 
 val:
   _target_: data.make_transformations
   split: val 
-  resolution: 384
+  resolution: 512
