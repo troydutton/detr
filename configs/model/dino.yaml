@@ -8,6 +8,7 @@ num_levels: 4
 dropout: 0.1
 num_groups: 13
 num_queries: 300
+num_denoise_queries: 100
 pos_noise_scale: 0.4
 neg_noise_scale: 0.8
 label_noise_prob: 0.25
@@ -37,7 +38,8 @@ decoder:
   refine_boxes: True
   denoise_queries: True
   num_groups: ${model.num_groups}
-  num_queries: ${model.num_queries} 
+  num_queries: ${model.num_queries}
+  num_denoise_queries: ${model.num_denoise_queries} 
   embed_dim: ${model.embed_dim}
   pos_noise_scale: ${model.pos_noise_scale}
   neg_noise_scale: ${model.neg_noise_scale}
@@ -49,6 +51,4 @@ decoder:
     num_heads: ${model.num_heads}
     num_points: ${model.num_points}
     num_levels: ${model.num_levels}
-    num_groups: ${model.num_groups}
-    num_queries: ${model.num_queries}
     dropout: ${model.dropout}

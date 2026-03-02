@@ -35,6 +35,7 @@ class TransformerDecoder(Module):
         num_layers: Number of decoder layers.
         num_queries: Number of object queries.
         num_groups: Number of query groups, optional.
+        num_denoise_queries: Number of denoising queries, optional.
         two_stage: Initialize object queries using encoder proposals or learned parameters, optional.
         refine_boxes: Whether to iteratively refine the reference boxes across decoder layers, optional.
         kwargs: Arguments to construct the decoder layers.
@@ -52,6 +53,7 @@ class TransformerDecoder(Module):
         pos_noise_scale: float = 0.4,
         neg_noise_scale: float = 0.8,
         label_noise_prob: float = 0.5,
+        num_denoise_queries: int = 100,
         *,
         two_stage: bool = False,
         refine_boxes: bool = False,
@@ -65,6 +67,7 @@ class TransformerDecoder(Module):
         self.num_layers = num_layers
         self.num_queries = num_queries
         self.num_groups = num_groups
+        self.num_denoise_queries = num_denoise_queries
         self.pos_noise_scale = pos_noise_scale
         self.neg_noise_scale = neg_noise_scale
         self.label_noise_prob = label_noise_prob
@@ -320,11 +323,11 @@ class TransformerDecoder(Module):
             return queries
 
         # Generate noisy versions of the target boxes and labels
-        query_embed = torch.zeros(batch_size, self.num_queries, self.embed_dim, device=device)
-        query_pos = torch.zeros(batch_size, self.num_queries, self.embed_dim, device=device)
-        query_ref = torch.zeros(batch_size, self.num_queries, 4, device=device)
-        padding_mask = torch.ones(batch_size, self.num_queries, dtype=torch.bool, device=device)
-        attention_mask = torch.ones(batch_size, self.num_queries, self.num_queries, dtype=torch.bool, device=device)
+        query_embed = torch.zeros(batch_size, self.num_denoise_queries, self.embed_dim, device=device)
+        query_pos = torch.zeros(batch_size, self.num_denoise_queries, self.embed_dim, device=device)
+        query_ref = torch.zeros(batch_size, self.num_denoise_queries, 4, device=device)
+        padding_mask = torch.ones(batch_size, self.num_denoise_queries, dtype=torch.bool, device=device)
+        attention_mask = torch.ones(batch_size, self.num_denoise_queries, self.num_denoise_queries, dtype=torch.bool, device=device)
 
         for i, (target, num_objects) in enumerate(zip(targets, objects_per_image)):
             boxes, labels = target["boxes"], target["labels"]
@@ -334,7 +337,7 @@ class TransformerDecoder(Module):
 
             # Adjust the number of denoising groups to fill the allocated space,
             # each group contains a positive and a negative copy of each object
-            num_denoise_groups = self.num_queries // (2 * num_objects)
+            num_denoise_groups = self.num_denoise_queries // (2 * num_objects)
             num_queries = num_denoise_groups * 2 * num_objects
 
             # Repeat the boxes and labels for each denoising group
@@ -376,7 +379,7 @@ class TransformerDecoder(Module):
             attention_mask[i, :num_queries, :num_queries] = denoise_group_indices[:, None] != denoise_group_indices[None, :]
 
         # Preserve the original object query masks
-        num_queries = num_object_queries + self.num_queries
+        num_queries = num_object_queries + self.num_denoise_queries
         full_padding_mask = torch.ones(batch_size, num_queries, dtype=torch.bool, device=device)
         full_attention_mask = torch.ones(batch_size, num_queries, num_queries, dtype=torch.bool, device=device)
         full_padding_mask[..., :num_object_queries] = queries.padding_mask
@@ -453,12 +456,10 @@ class DecoderLayer(Module):
         ffn_dim: int,
         num_heads: int,
         dropout: float = 0.0,
-        num_groups: int = 1,
     ) -> None:
         super().__init__()
 
         self.num_heads = num_heads
-        self.num_groups = num_groups
 
         # Self-attention
         self.norm1 = LayerNorm(embed_dim)
@@ -543,14 +544,10 @@ class DeformableDecoderLayer(Module):
         num_points: int,
         num_levels: int,
         dropout: float = 0.0,
-        num_groups: int = 1,
-        num_queries: int = 300,
     ) -> None:
         super().__init__()
 
         self.num_heads = num_heads
-        self.num_groups = num_groups
-        self.num_queries = num_queries
 
         # Self-attention
         self.norm1 = LayerNorm(embed_dim)
