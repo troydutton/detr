@@ -22,7 +22,7 @@ class Criterion:
 
     Args:
         loss_weights: Weights for different loss components.
-        alpha: Focal loss alpha parameter, optional.
+        alpha: Quality weighting parameter, optional.
         gamma: Focal loss gamma parameter, optional.
     """
 
@@ -175,12 +175,15 @@ class Criterion:
         """
         Calculate the classification loss between predictions and target labels.
 
-        Uses varifocal loss which assigns IoU targets for matched predictions, and zero
-        targets for unmatched predictions. Matched predictions are weighted by their IoU,
-        while unmatched predictions are weighted according to the normal focal loss schema.
+        Uses an IoU-aware focal loss which assigns quality-based targets for matched predictions,
+        and zero targets for unmatched predictions. Quality targets are the weighted geometric mean
+        of the predicted class probability and the IoU, encouraging the model to align the classification
+        and regression tasks. Specifically,
 
-        For matched predictions:   - iou * (iou * log(p) + (1 - iou) * log(1 - p))
-        For unmatched predictions: - (1 - α) * (p ** γ) * log(1 - p)
+        Matched:   - q * ((1 - p) ** γ) * log(p) - (1 - q) * (p ** γ) * log(1 - p)
+        Unmatched: - (p ** γ) * log(1 - p)
+
+        where q = (p^α) * (iou^(1-α))
 
         Args:
             predictions: Model predictions, with keys
@@ -196,32 +199,34 @@ class Criterion:
         """
 
         # Get classification predictions and targets
+        prediction_indices, target_indices = matched_indices
+
         prediction_logits = predictions.logits
         prediction_probs = prediction_logits.sigmoid()
+        target_labels = torch.cat([t["labels"][i] for t, i in zip(targets, target_indices)])
+        matched_prediction_probs = prediction_probs[*prediction_indices, target_labels]
 
-        prediction_indices, target_indices = matched_indices
-        target_labels = torch.cat([t["labels"][i] for t, i in zip(targets, target_indices)])  # (num_matches,)
-
-        # Calculate IoU for matched predictions
+        # Calculate quality scores for matched predictions: (p^α) * (iou^(1-α))
         with torch.no_grad():
-            prediction_boxes = predictions.boxes[prediction_indices]  # (num_matches, 4)
-            target_boxes = torch.cat([t["boxes"][i] for t, i in zip(targets, target_indices)])  # (num_matches, 4)
+            prediction_boxes = predictions.boxes[prediction_indices]
+            target_boxes = torch.cat([t["boxes"][i] for t, i in zip(targets, target_indices)])
 
             prediction_boxes = box_convert(prediction_boxes, "cxcywh", "xyxy")
             target_boxes = box_convert(target_boxes, "cxcywh", "xyxy")
-            iou = box_iou(prediction_boxes, target_boxes).diag().clamp(min=0.01)
+            iou = box_iou(prediction_boxes, target_boxes).diag()
 
-        # Build targets (IoU for matched predictions, 0 for unmatched)
-        soft_target_labels = torch.zeros_like(prediction_probs)
-        soft_target_labels[*prediction_indices, target_labels] = iou.to(soft_target_labels.dtype)
+            quality = ((matched_prediction_probs**self.alpha) * (iou ** (1 - self.alpha))).clamp(min=0.01)
 
-        # Build weights (IoU for matched predictions, focal weights for unmatched)
-        weights = (1 - self.alpha) * (prediction_probs**self.gamma)
-        weights[*prediction_indices, target_labels] = iou.to(weights.dtype)
+        # Build positive weights: q * (1 - p) ** γ for matched, 0 for unmatched
+        pos_weights = torch.zeros_like(prediction_probs)
+        pos_weights[*prediction_indices, target_labels] = (quality * ((1 - matched_prediction_probs) ** self.gamma)).to(pos_weights.dtype)
 
-        # Calculate the class loss
-        bce_loss = F.binary_cross_entropy_with_logits(prediction_logits, soft_target_labels, reduction="none")
-        class_loss = (weights * bce_loss).sum()
+        # Build negative weights: (1 -q) * (p ** γ) for matched, (p ** γ) for unmatched
+        neg_weights = prediction_probs**self.gamma
+        neg_weights[*prediction_indices, target_labels] *= (1 - quality).to(neg_weights.dtype)
+
+        # Numerically stable variant of -positive_weights * log(p) - negative_weights * log(1 - p)
+        class_loss = (neg_weights * prediction_logits - F.logsigmoid(prediction_logits) * (pos_weights + neg_weights)).sum()
 
         return class_loss
 
