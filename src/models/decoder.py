@@ -38,9 +38,13 @@ class TransformerDecoder(Module):
         num_layers: Number of decoder layers.
         num_queries: Number of object queries.
         num_groups: Number of query groups, optional.
+        pos_noise_scale: Box noise scale for positives in denoising queries, optional.
+        neg_noise_scale: Box noise scale for negatives in denoising queries, optional.
+        label_noise_prob: Label noise probability for denoising queries, optional.
         num_denoise_queries: Number of denoising queries, optional.
         two_stage: Initialize object queries using encoder proposals or learned parameters, optional.
         refine_boxes: Whether to iteratively refine the reference boxes across decoder layers, optional.
+        denoise_queries: Whether to use denoising queries during training, optional.
         kwargs: Arguments to construct the decoder layers.
             See `models.decoder.DecoderLayer` or `models.decoder.DeformableDecoderLayer`.
 
@@ -80,7 +84,6 @@ class TransformerDecoder(Module):
 
         # Create the bounding box and classification heads
         self.bbox_head = FFN(embed_dim, embed_dim, 4, 3)
-
         self.class_head = Linear(embed_dim, num_classes)
 
         # Create the object query initialization components
@@ -91,11 +94,13 @@ class TransformerDecoder(Module):
         else:  # Learnable parameters as initial queries
             self.queries = nn.Embedding(num_groups * num_queries, embed_dim)
             self.reference_points = Linear(embed_dim, 2)
+
         if self.denoise_queries:  # Denoising queries
             self.label_embed = nn.Embedding(num_classes, embed_dim)
             self.object_embed = nn.Embedding(1, embed_dim)
             self.denoise_embed = nn.Embedding(1, embed_dim)
 
+        # Mapping from positional encodings of reference boxes to their positional embeddings
         self.pos_projection = FFN(2 * embed_dim, embed_dim, embed_dim, 2)
 
         # Create the decoder layers
@@ -135,13 +140,13 @@ class TransformerDecoder(Module):
         # Get batch information
         batch_size, _, _ = features.embed.shape
 
-        # Initialize the object queries, during inference we only user the first query group
+        # Initialize the object queries, during inference we only use the first query group
         num_groups = self.num_groups if self.training else 1
-        encoder_boxes = encoder_logits = None
         if self.two_stage:
             queries, encoder_boxes, encoder_logits = self._generate_query_proposals(features, num_groups)
         else:
             queries = self._initialize_object_queries(batch_size, num_groups)
+            encoder_boxes = encoder_logits = None
 
         # Add a learnable task embedding to distinguish between object and denoising queries
         if self.denoise_queries:
@@ -242,9 +247,9 @@ class TransformerDecoder(Module):
         Returns:
             queries: Initial object queries.
             #### encoder_boxes
-            Normalized CXCYWH encoder proposal box predictions with shape (batch_size, 1, num_features, 4).
+            Normalized CXCYWH encoder proposal box predictions with shape (batch_size, 1, num_groups, num_features, 4).
             #### encoder_logits
-            Encoder proposal class logits with shape (batch_size, 1, num_features, num_classes).
+            Encoder proposal class logits with shape (batch_size, 1, num_groups, num_features, num_classes).
         """
 
         # Get batch information
@@ -429,6 +434,9 @@ class DecoderLayer(Module):
     """
     Single layer of the transformer decoder.
 
+    Implements standard self-attention within queries, cross-attention between queries
+    and features, and a two-layer feedforward network.
+
     Args:
         embed_dim: Embedding dimension.
         ffn_dim: Feedforward network dimension.
@@ -537,7 +545,10 @@ class DecoderLayer(Module):
 
 class DeformableDecoderLayer(Module):
     """
-    Single layer of the transformer decoder.
+    Single deformable layer of the transformer decoder.
+
+    Implements standard self-attention within queries, deformable cross-attention
+    between queries and features, and a two-layer feedforward network.
 
     Args:
         embed_dim: Embedding dimension.
