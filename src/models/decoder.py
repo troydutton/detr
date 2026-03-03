@@ -21,8 +21,11 @@ class Queries:
     embed: Tensor
     pos: Tensor
     reference: Tensor
-    padding_mask: Tensor
-    attention_mask: Tensor
+    num_groups: int
+    num_queries: int
+    num_denoise_queries: int = 0
+    denoise_padding_mask: Optional[Tensor] = None
+    denoise_attention_mask: Optional[Tensor] = None
 
 
 class TransformerDecoder(Module):
@@ -175,9 +178,10 @@ class TransformerDecoder(Module):
         boxes = torch.stack(boxes, dim=1)
         logits = torch.stack(logits, dim=1)
 
-        # Replace predictions from padded queries with zeros
-        boxes = boxes.masked_fill(queries.padding_mask[:, None, :, None], 0.0)
-        logits = logits.masked_fill(queries.padding_mask[:, None, :, None], 0.0)
+        # Mask predictions from padded denoising queries
+        if queries.num_denoise_queries > 0:
+            boxes[:, :, -queries.num_denoise_queries :].masked_fill_(queries.denoise_padding_mask[:, None, :, None], 0.0)
+            logits[:, :, -queries.num_denoise_queries :].masked_fill_(queries.denoise_padding_mask[:, None, :, None], 0.0)
 
         # Separate the denoising query predictions if they exist
         _, total_queries, _ = queries.embed.shape
@@ -225,12 +229,7 @@ class TransformerDecoder(Module):
         query_pos = query_pos.expand(batch_size, -1, -1)
         query_ref = query_ref.expand(batch_size, -1, -1)
 
-        # Create masks to force queries to attend within their group
-        padding_mask = torch.zeros(batch_size, num_groups * self.num_queries, dtype=torch.bool, device=query_embed.device)
-        group_indices = torch.arange(num_groups * self.num_queries, device=query_embed.device) // self.num_queries
-        attention_mask = (group_indices[:, None] != group_indices[None, :]).unsqueeze(0).repeat(batch_size, 1, 1)
-
-        return Queries(embed=query_embed, pos=query_pos, reference=query_ref, padding_mask=padding_mask, attention_mask=attention_mask)
+        return Queries(embed=query_embed, pos=query_pos, reference=query_ref, num_groups=num_groups, num_queries=self.num_queries)
 
     def _generate_query_proposals(self, features: Features, num_groups: int) -> Tuple[Queries, Tensor, Tensor]:
         """
@@ -289,13 +288,8 @@ class TransformerDecoder(Module):
         # Treat the references as fixed priors for the decoder
         query_ref = query_ref.detach()
 
-        # Create masks to force queries to attend within their group
-        padding_mask = torch.zeros(batch_size, num_groups * self.num_queries, dtype=torch.bool, device=query_embed.device)
-        group_indices = torch.arange(num_groups * self.num_queries, device=query_embed.device) // self.num_queries
-        attention_mask = (group_indices[:, None] != group_indices[None, :]).unsqueeze(0).repeat(batch_size, 1, 1)
-
         # Prepare outputs
-        queries = Queries(embed=query_embed, pos=query_pos, reference=query_ref, padding_mask=padding_mask, attention_mask=attention_mask)
+        queries = Queries(embed=query_embed, pos=query_pos, reference=query_ref, num_groups=num_groups, num_queries=self.num_queries)
         encoder_boxes = encoder_boxes.view(batch_size, 1, num_groups, num_features, -1)
         encoder_logits = encoder_logits.view(batch_size, 1, num_groups, num_features, -1)
 
@@ -315,7 +309,7 @@ class TransformerDecoder(Module):
 
         # Get batch information
         device = queries.embed.device
-        batch_size, num_object_queries, _ = queries.embed.shape
+        batch_size, _, _ = queries.embed.shape
         objects_per_image = [len(target["labels"]) for target in targets]
 
         # Skip denoising if there are no objects in the batch
@@ -378,15 +372,6 @@ class TransformerDecoder(Module):
             denoise_group_indices = torch.arange(num_queries, device=device) // (2 * num_objects)
             attention_mask[i, :num_queries, :num_queries] = denoise_group_indices[:, None] != denoise_group_indices[None, :]
 
-        # Preserve the original object query masks
-        num_queries = num_object_queries + self.num_denoise_queries
-        full_padding_mask = torch.ones(batch_size, num_queries, dtype=torch.bool, device=device)
-        full_attention_mask = torch.ones(batch_size, num_queries, num_queries, dtype=torch.bool, device=device)
-        full_padding_mask[..., :num_object_queries] = queries.padding_mask
-        full_attention_mask[..., :num_object_queries, :num_object_queries] = queries.attention_mask
-        full_padding_mask[..., num_object_queries:] = padding_mask
-        full_attention_mask[..., num_object_queries:, num_object_queries:] = attention_mask
-
         # Add a learnable task embedding to distinguish between object and denoising queries
         query_embed += self.denoise_embed.weight[None, ...]
 
@@ -394,8 +379,9 @@ class TransformerDecoder(Module):
         queries.embed = torch.cat([queries.embed, query_embed], dim=1)
         queries.pos = torch.cat([queries.pos, query_pos], dim=1)
         queries.reference = torch.cat([queries.reference, query_ref], dim=1)
-        queries.padding_mask = full_padding_mask
-        queries.attention_mask = full_attention_mask
+        queries.num_denoise_queries = self.num_denoise_queries
+        queries.denoise_padding_mask = padding_mask
+        queries.denoise_attention_mask = attention_mask
 
         return queries
 
@@ -488,24 +474,50 @@ class DecoderLayer(Module):
             queries: Object queries with the same shape as the input.
         """
 
-        # During training, we use multiple object/denoising query groups which attend separately
-        # in self-attention, but during inference we only use the first group of object queries
-        padding_mask = queries.padding_mask if self.training else None
-        attention_mask = queries.attention_mask.repeat_interleave(self.num_heads, dim=0) if self.training else None
+        # Prepare shapes and split queries
+        batch_size, _, _ = queries.embed.shape
+        num_object_queries = queries.num_groups * queries.num_queries
 
-        # Self-attention
-        v = self.norm1(queries.embed)
-        q = k = v + queries.pos
-        queries.embed = queries.embed + self.dropout1(
-            self.self_attention(
-                query=q,
-                key=k,
-                value=v,
-                key_padding_mask=padding_mask,
-                attn_mask=attention_mask,
-                need_weights=False,
-            )[0]
-        )
+        # Split object & denoising queries if any exist
+        if queries.num_denoise_queries > 0:
+            obj_embed, denoise_embed = queries.embed.split([num_object_queries, queries.num_denoise_queries], dim=1)
+            obj_pos, denoise_pos = queries.pos.split([num_object_queries, queries.num_denoise_queries], dim=1)
+        else:
+            obj_embed = queries.embed
+            obj_pos = queries.pos
+
+        # Object query self-attention, moving groups into the batch dimension to prevent
+        # attention between groups without requring a costly attention mask
+        obj_embed = obj_embed.reshape(batch_size * queries.num_groups, queries.num_queries, -1)
+        obj_pos = obj_pos.reshape(batch_size * queries.num_groups, queries.num_queries, -1)
+
+        v = self.norm1(obj_embed)
+        q = k = v + obj_pos
+        obj_embed: Tensor = obj_embed + self.dropout1(self.self_attention(q, k, v, need_weights=False)[0])
+
+        queries.embed = obj_embed.reshape(batch_size, num_object_queries, -1)
+
+        # Denoising query self-attention, we need to use attention masks here because the
+        # size and number of denoising query groups vary from image to image
+        if queries.num_denoise_queries > 0:
+            v = self.norm1(denoise_embed)
+            q = k = v + denoise_pos
+
+            denoise_pad = queries.denoise_padding_mask
+            denoise_attn = queries.denoise_attention_mask.repeat_interleave(self.num_heads, dim=0)
+
+            denoise_embed = denoise_embed + self.dropout1(
+                self.self_attention(
+                    query=q,
+                    key=k,
+                    value=v,
+                    key_padding_mask=denoise_pad,
+                    attn_mask=denoise_attn,
+                    need_weights=False,
+                )[0]
+            )
+
+            queries.embed = torch.cat([queries.embed, denoise_embed], dim=1)
 
         # Cross-attention
         q = self.norm2(queries.embed) + queries.pos
@@ -576,24 +588,50 @@ class DeformableDecoderLayer(Module):
             queries: Object queries with the same shape as the input.
         """
 
-        # During training, we use multiple object/denoising query groups which attend separately
-        # in self-attention, but during inference we only use the first group of object queries
-        padding_mask = queries.padding_mask if self.training else None
-        attention_mask = queries.attention_mask.repeat_interleave(self.num_heads, dim=0) if self.training else None
+        # Prepare shapes and split queries
+        batch_size, _, _ = queries.embed.shape
+        num_object_queries = queries.num_groups * queries.num_queries
 
-        # Self-attention
-        v = self.norm1(queries.embed)
-        q = k = v + queries.pos
-        queries.embed = queries.embed + self.dropout1(
-            self.self_attention(
-                query=q,
-                key=k,
-                value=v,
-                key_padding_mask=padding_mask,
-                attn_mask=attention_mask,
-                need_weights=False,
-            )[0]
-        )
+        # Split object & denoising queries if any exist
+        if queries.num_denoise_queries > 0:
+            obj_embed, denoise_embed = queries.embed.split([num_object_queries, queries.num_denoise_queries], dim=1)
+            obj_pos, denoise_pos = queries.pos.split([num_object_queries, queries.num_denoise_queries], dim=1)
+        else:
+            obj_embed = queries.embed
+            obj_pos = queries.pos
+
+        # Object query self-attention, moving groups into the batch dimension to prevent
+        # attention between groups without requring a costly attention mask
+        obj_embed = obj_embed.reshape(batch_size * queries.num_groups, queries.num_queries, -1)
+        obj_pos = obj_pos.reshape(batch_size * queries.num_groups, queries.num_queries, -1)
+
+        v = self.norm1(obj_embed)
+        q = k = v + obj_pos
+        obj_embed: Tensor = obj_embed + self.dropout1(self.self_attention(q, k, v, need_weights=False)[0])
+
+        queries.embed = obj_embed.reshape(batch_size, num_object_queries, -1)
+
+        # Denoising query self-attention, we need to use attention masks here because the
+        # size and number of denoising query groups vary from image to image
+        if queries.num_denoise_queries > 0:
+            v = self.norm1(denoise_embed)
+            q = k = v + denoise_pos
+
+            denoise_pad = queries.denoise_padding_mask
+            denoise_attn = queries.denoise_attention_mask.repeat_interleave(self.num_heads, dim=0)
+
+            denoise_embed = denoise_embed + self.dropout1(
+                self.self_attention(
+                    query=q,
+                    key=k,
+                    value=v,
+                    key_padding_mask=denoise_pad,
+                    attn_mask=denoise_attn,
+                    need_weights=False,
+                )[0]
+            )
+
+            queries.embed = torch.cat([queries.embed, denoise_embed], dim=1)
 
         # Cross-attention
         queries.embed = queries.embed + self.dropout2(
