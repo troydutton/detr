@@ -53,15 +53,16 @@ class MultiHeadDeformableAttention(nn.Module):
         # Project features to value space
         values = self.value_proj(features)
 
-        # Split values and points by level
+        # Split values and points by level (num_levels, batch_size * num_heads, num_queries, num_points, 2)
         values = values.split([w * h for w, h in dimensions], dim=1)
-        points = points.permute(3, 0, 2, 1, 4, 5).flatten(1, 2)  # (num_levels, batch_size * num_heads, num_queries, num_points, 2)
+        points = points.permute(3, 0, 2, 1, 4, 5).contiguous().flatten(1, 2)
 
         # Sample values from each level
         sampled_values = []
         for level_values, level_points, (w, h) in zip(values, points, dimensions):
+            # Reshape to (batch_size * num_heads, head_dim, height, width)
             level_values = level_values.view(batch_size, h, w, self.num_heads, self.head_dim)
-            level_values = level_values.permute(0, 3, 4, 1, 2).flatten(0, 1)  # (batch_size * num_heads, head_dim, height, width)
+            level_values = level_values.permute(0, 3, 4, 1, 2).contiguous().flatten(0, 1)
 
             sampled_level_values = F.grid_sample(
                 level_values,
@@ -75,16 +76,16 @@ class MultiHeadDeformableAttention(nn.Module):
 
         sampled_values = torch.cat(sampled_values, dim=-1)
 
-        # Calculate attention weights (normalized over the points across all
+        # Calculate attention weights (normalized over the points across all levels)
         attention_weights = self.attention_weights(queries).view(batch_size, num_queries, self.num_heads, self.num_levels * self.num_points)
         attention_weights = attention_weights.softmax(dim=-1)
-        attention_weights = attention_weights.transpose(1, 2).unsqueeze(2)
+        attention_weights = attention_weights.transpose(1, 2)
 
         # Perform attention
-        output = (sampled_values * attention_weights).sum(dim=-1)
+        output = torch.einsum("bhcqp,bhqp->bhcq", sampled_values, attention_weights)
 
         # Restore original shape
-        output = output.view(batch_size, embed_dim, num_queries).transpose(1, 2)
+        output = output.reshape(batch_size, embed_dim, num_queries).transpose(1, 2)
 
         # Output projection
         output = self.output_proj(output)
