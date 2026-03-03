@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 class Criterion:
     """
-    Implements set-based and denoising loss for object detection, following DETR and DINO.
+    Implements box and classification losses for object detection.
 
     Args:
         loss_weights: Weights for different loss components.
@@ -31,12 +31,10 @@ class Criterion:
         loss_weights: Dict[str, float],
         alpha: float = 0.25,
         gamma: float = 2.0,
-        num_groups: int = 1,
     ) -> None:
         self.loss_weights = loss_weights
         self.alpha = alpha
         self.gamma = gamma
-        self.num_groups = num_groups
 
         self.matcher = HungarianMatcher(cost_weights=loss_weights, alpha=alpha, gamma=gamma)
 
@@ -50,7 +48,7 @@ class Criterion:
         Calculates losses for the given predictions and targets.
 
         Args:
-            predictions: Decoder, optionally encoder, and optionally denoise predictions, with keys
+            predictions: Decoder, encoder, and denoising predictions, with keys
                 - `logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
                 - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_groups, num_queries, 4).
             targets: List of targets for each image, with keys
@@ -59,21 +57,26 @@ class Criterion:
             accelerator: Distributed accelerator, optional.
 
         Returns:
-            losses: Dictionary of calculated losses.
+            losses: Dictionary of losses, including `box`, `giou`, `class`, and `overall`.
         """
 
         decoder_predictions, encoder_predictions, denoise_predictions = predictions
 
-        # We normalize the matching losses by the number of objects, averaged across all devices.
+        # Traditional object query losses are normalized by the number of objects across
+        # all groups, excluding the number of layers to allow each layer to contribute equally.
+        num_groups = decoder_predictions.logits.shape[2]
         objects_per_image = [len(t["boxes"]) for t in targets]
-        num_targets = sum(objects_per_image)
+        num_targets = sum(objects_per_image) * num_groups
+
         if accelerator is not None:
-            num_targets = accelerator.reduce(torch.tensor(num_targets, dtype=torch.float, device=accelerator.device), reduction="mean")
+            num_targets = torch.tensor(num_targets, dtype=torch.float, device=accelerator.device)
+            num_targets = accelerator.reduce(num_targets, reduction="mean")
+
         num_targets = max(num_targets, 1)
 
         losses = {"box": 0.0, "giou": 0.0, "class": 0.0}
 
-        # Calculate loss for the decoder predictions
+        # Decoder losses
         matched_indices = self.matcher(decoder_predictions, targets)
         decoder_box_loss, decoder_giou_loss = self._calculate_box_losses(decoder_predictions, targets, matched_indices)
         decoder_class_loss = self._calculate_class_loss(decoder_predictions, targets, matched_indices)
@@ -82,7 +85,7 @@ class Criterion:
         losses["giou"] += decoder_giou_loss / num_targets
         losses["class"] += decoder_class_loss / num_targets
 
-        # Calculate loss for the encoder predictions
+        # Encoder losses
         if encoder_predictions is not None:
             matched_indices = self.matcher(encoder_predictions, targets)
             encoder_box_loss, encoder_giou_loss = self._calculate_box_losses(encoder_predictions, targets, matched_indices)
@@ -92,22 +95,26 @@ class Criterion:
             losses["giou"] += encoder_giou_loss / num_targets
             losses["class"] += encoder_class_loss / num_targets
 
-        # Calculate loss for the denoising predictions
+        # Denoising losses
         if denoise_predictions is not None:
+            # Denoising losses are normalized by the number of positive denoising samples,
+            # determined on the fly because we vary the number of denoising query groups
+            num_denoise_queries = denoise_predictions.logits.shape[3]
+            num_denoise_targets = sum(n * (num_denoise_queries // (2 * n)) if n > 0 else 0 for n in objects_per_image)
+
+            if accelerator is not None:
+                num_denoise_targets = torch.tensor(num_denoise_targets, dtype=torch.float, device=accelerator.device)
+                num_denoise_targets = accelerator.reduce(num_denoise_targets, reduction="mean")
+
+            num_denoise_targets = max(num_denoise_targets, 1)
+
             matched_indices = self._get_denoise_match_indices(denoise_predictions, targets)
             denoise_box_loss, denoise_giou_loss = self._calculate_box_losses(denoise_predictions, targets, matched_indices)
             denoise_class_loss = self._calculate_class_loss(denoise_predictions, targets, matched_indices)
 
-            # We normalize denoising losses by the number of positive samples, averaged across all devices.
-            _, _, _, num_queries, _ = denoise_predictions.logits.shape
-            num_targets = sum(n * (num_queries // (2 * n)) if n > 0 else 0 for n in objects_per_image)
-            if accelerator is not None:
-                num_targets = accelerator.reduce(torch.tensor(num_targets, dtype=torch.float, device=accelerator.device), reduction="mean")
-            num_targets = max(num_targets, 1)
-
-            losses["box"] += denoise_box_loss / num_targets
-            losses["giou"] += denoise_giou_loss / num_targets
-            losses["class"] += denoise_class_loss / num_targets
+            losses["box"] += denoise_box_loss / num_denoise_targets
+            losses["giou"] += denoise_giou_loss / num_denoise_targets
+            losses["class"] += denoise_class_loss / num_denoise_targets
 
         # The overall loss is a weighted sum of the individual loss components
         losses["overall"] = sum(v * self.loss_weights.get(k, 1) for k, v in losses.items())
