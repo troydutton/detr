@@ -15,7 +15,7 @@ label_noise_prob: 0.5
 
 
 backbone:
-  name: convnext_tiny
+  name: convnext_tiny.dinov3_lvd1689m
   embed_dim: ${model.embed_dim}
   num_levels: ${model.num_levels}
   pretrained: True

@@ -10,7 +10,7 @@ num_groups: 13
 num_queries: 300
 
 backbone:
-  name: convnext_tiny
+  name: convnext_tiny.dinov3_lvd1689m
   embed_dim: ${model.embed_dim}
   num_levels: ${model.num_levels}
   pretrained: True
