@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH -J detr
+#SBATCH -J ddetr-small
 #SBATCH -N 4
 #SBATCH --ntasks-per-node=1
 #SBATCH -p gh
-#SBATCH -t 48:00:00
-#SBATCH -o /work/09889/troydutton/vista/out/detr/detr-%j
+#SBATCH -t 20:00:00
+#SBATCH -o /work/09889/troydutton/vista/out/detr/ddetr-small-%j
 #SBATCH -A OTH25007
 
 # Worker Logic
@@ -18,7 +18,6 @@ if [[ "$1" == "--worker" ]]; then
 	# Distributed variables
 	RANK=$SLURM_PROCID
 	WORLD_SIZE=$SLURM_NNODES
-	export $OMP_NUM_THREADS=64
 
 	echo "$((RANK + 1))/$WORLD_SIZE connecting to $MASTER_ADDR:$MASTER_PORT."
 
@@ -31,13 +30,14 @@ if [[ "$1" == "--worker" ]]; then
 		--main_process_port=$MASTER_PORT \
 		--mixed_precision bf16 \
 		--rdzv_backend static \
-		src/train.py
-
+		src/train.py \
+		--config-name=ddetr
 	exit 0
 fi
 
 # Launcher Logic
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 export MASTER_PORT=1234
+export OMP_NUM_THREADS=64
 
 srun ~/work/programs/detr/scripts/train-vista.slurm --worker
