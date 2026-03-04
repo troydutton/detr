@@ -186,7 +186,7 @@ class TransformerDecoder(Module):
         # Mask predictions from padded denoising queries
         if queries.num_denoise_queries > 0:
             boxes[:, :, -queries.num_denoise_queries :].masked_fill_(queries.denoise_padding_mask[:, None, :, None], 0.0)
-            logits[:, :, -queries.num_denoise_queries :].masked_fill_(queries.denoise_padding_mask[:, None, :, None], 0.0)
+            logits[:, :, -queries.num_denoise_queries :].masked_fill_(queries.denoise_padding_mask[:, None, :, None], -100.0)
 
         # Separate the denoising query predictions if they exist
         _, total_queries, _ = queries.embed.shape
