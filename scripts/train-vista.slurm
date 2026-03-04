@@ -4,7 +4,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH -p gh
 #SBATCH -t 20:00:00
-#SBATCH -o /work/09889/troydutton/vista/out/detr/ddetr-small-%j
+#SBATCH -o /work/09889/troydutton/vista/out/detr/%x-%j
 #SBATCH -A OTH25007
 
 # Worker Logic
