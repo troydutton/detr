@@ -3,16 +3,16 @@
 ##  Project Overview
 This project implements the DETR (DEtection TRansformer) model for object detection. The codebase is structured to facilitate easy experimentation with different model architectures, training paradigms, and data processing pipelines.
 
-All source code is located in the `src/` directory. The main entry point for training is `train.py`, and the primary training and evaluation loop is located in `engine.py`.
+All source code is located in the `src/` directory. The main entry point for training is `train.py`, the main entry point for evaluation is `eval.py`, and the primary training and evaluation loop is located in `engine.py`.
 
 The primary modules are:
- - `models/`: Contains model definitions (`detr.py`), backbone architectures (`backbone.py`), and transformer implementations (`transformer.py`, `encoder.py`, `decoder.py`, `positional_embedding.py`).
+ - `models/`: Contains model definitions (`detr.py`), backbone architectures (`backbone.py`), transformer implementations (`transformer.py`, `encoder.py`, `decoder.py`), and useful utilities (`layers.py`, `deformable_attention.py`, `positional_embedding.py`).
  - `datasets/`: Data loading (`coco_dataset.py`) and transformation utilities (`transforms.py`).
- - `criterion/`: Loss functions (`set_criterion.py`) and matching algorithms (`matcher.py`).
+ - `criterion/`: Loss functions (`criterion.py`) and matching algorithms (`matcher.py`).
  - `evaluators/`: Evaluation metrics (`coco_evaluator.py`).
- - `utils/`: Utility functions for learning rate schedulers (`lr.py`), visualization (`visualize.py`), and miscellaneous helpers (`misc.py`).
+ - `utils/`: Utility functions for parameter group initialization (`optimizer.py`), learning rate schedulers (`lr.py`), visualization (`visualize.py`), and miscellaneous helpers (`misc.py`).
 
-Both configuration files (`configs/`) and unit tests (`tests/`) are located outside the `src/` directory.
+Configuration files (`configs/`) use the Hydra format, and unit tests (`tests/`) use the pytest framework.
 
 ## Key Workflows & Commands
 ### Environment Management
@@ -40,7 +40,7 @@ Type hinting is **strictly enforced** for all arguments and return values.
 
 ### Docstrings
 Google Style docstrings are required for all public modules, functions, classes, and methods.
-- Types should only be specified in the function signature, not in the argument description.
+- Types should only be specified in the function signature, not in the docstring.
 - Docstrings for classes should document the arguments for creation under the class definition, above `__init__`.
 - Functions with multiple return values should use #### for each return value after the first.
 - Example:
@@ -76,3 +76,12 @@ Use descriptive yet succinct variable names that provide immediate semantic cont
 - Use `images` (not `x`), `feature_pos` (not `pos` or `feature_positional_embeddings`), `embed_dim` (not `d`), and `in_channels` (not `c`).
 - Use plurals for collections (`boxes`), `_mask` for booleans, `_logits` for raw outputs, and `_indices` for indices.
 - Differentiate data location using `target_classes`, `encoder_boxes`, or `decoder_queries`.
+
+### Relevant Literature
+
+This project is based on the following key papers, use them as references if you have questions about the model architecture, training paradigm:
+
+- [DETR](https://ar5iv.labs.arxiv.org/html/2005.12872): Introduces the transformer-based object detection paradigm.
+- [Deformable DETR](https://ar5iv.labs.arxiv.org/html/2010.04159): Introduces deformable attention.
+- [Group DETR](https://ar5iv.labs.arxiv.org/html/2207.13085): Introduces multiple query groups.
+- [DINO DETR](https://ar5iv.labs.arxiv.org/html/2203.03605): Introduces a contrastive denoising objective.
