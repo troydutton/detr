@@ -11,7 +11,7 @@ num_queries: 300
 num_denoise_queries: 100
 pos_noise_scale: 0.4
 neg_noise_scale: 0.8
-label_noise_prob: 0.25
+label_noise_prob: 0.5
 
 
 backbone:
