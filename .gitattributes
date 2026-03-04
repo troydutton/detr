@@ -1,0 +1,10 @@
+# Handle line endings automatically
+* text=auto
+
+# Shell scripts get LF
+*.sh text eol=lf
+
+# Don't corrupt binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
