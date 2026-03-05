@@ -79,6 +79,8 @@ def train(
             checkpoint_dir = Path(output_dir) / f"{epoch + 1}"
             accelerator.save_state(checkpoint_dir)
 
+        torch.cuda.empty_cache()
+
 
 def train_one_epoch(
     model: DETR,
