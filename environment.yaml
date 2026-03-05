@@ -19,6 +19,7 @@ dependencies:
   - nvidia-ml-py
   - transformers
   - timm
+  - onnxscript
   - wandb
   - hydra-core
   - ipykernel
