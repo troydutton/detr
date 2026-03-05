@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH -J ddetr-small
+#SBATCH -J dino
 #SBATCH -N 4
 #SBATCH --ntasks-per-node=1
 #SBATCH -p gh
-#SBATCH -t 20:00:00
+#SBATCH -t 24:00:00
 #SBATCH -o /work/09889/troydutton/vista/out/detr/%x-%j
 #SBATCH -A OTH25007
 
@@ -31,7 +31,7 @@ if [[ "$1" == "--worker" ]]; then
 		--mixed_precision bf16 \
 		--rdzv_backend static \
 		src/train.py \
-		--config-name=ddetr
+		--config-name=$SLURM_JOB_NAME
 	exit 0
 fi
 
