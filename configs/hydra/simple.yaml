@@ -13,5 +13,8 @@ job_logging:
       class: logging.StreamHandler
       formatter: simple
       stream: ext://sys.stdout
+    file:
+      class: logging.FileHandler
+      filename: /dev/null
   root:
     handlers: [console]
