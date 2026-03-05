@@ -126,19 +126,6 @@ def test_detr_predict() -> None:
 
     model = DETR(**kwargs)
 
-    # Test single image input
-    single_image = torch.randn(3, 224, 224)
-    single_output = model.predict(single_image, confidence_threshold=0.0)
-
-    assert isinstance(single_output, Detections)
-    assert isinstance(single_output.boxes, torch.Tensor)
-    assert isinstance(single_output.labels, torch.Tensor)
-    assert isinstance(single_output.scores, torch.Tensor)
-    assert single_output.boxes.ndim == 2 and single_output.boxes.shape[1] == 4
-    assert single_output.labels.ndim == 1
-    assert single_output.scores.ndim == 1
-    assert single_output.categories is None
-
     # Test batched image input
     batched_images = torch.randn(batch_size, 3, 224, 224)
     batched_output = model.predict(batched_images, confidence_threshold=0.0)

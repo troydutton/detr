@@ -96,7 +96,9 @@ class Backbone(nn.Module):
         # Build multi-level features for the transformer encoder
         all_features, all_pos, all_references, all_levels, dimensions = [], [], [], [], []
 
-        for level, (features, projection, level_pos) in enumerate(zip(backbone_features, self.projections, self.level_pos.weight)):
+        for level, (features, projection) in enumerate(zip(backbone_features, self.projections)):
+            level_pos = self.level_pos(torch.tensor(level, device=device))
+
             # Project into the desired embedding dimension
             features: Tensor = projection(features)
 

@@ -94,22 +94,21 @@ class DETR(nn.Module):
         images: Tensor,
         confidence_threshold: float = 0.5,
         iou_threshold: float = 0.5,
-    ) -> Union[Detections, List[Tensor]]:
+        export: bool = False,
+    ) -> Union[List[Detections], Tuple[Tensor, Tensor]]:
         """
         Predict bounding boxes and class logits for a batch of input images.
 
         Args:
-            images: A batch of images with shape (batch, channels, height, width) or (channels, height, width).
+            images: A batch of images with shape (batch, channels, height, width).
             confidence_threshold: Minimum confidence score for a prediction to be kept.
             iou_threshold: IoU threshold for non-maximum suppression.
+            export: Whether to return raw predictions for ONNX export.
 
         Returns:
             detections: A detection for every image, containg the `boxes`, `labels`, and `scores` for the predicted objects.
+                Alternatively, returns the raw `boxes` and `logits` tensors for ONNX export.
         """
-
-        # Handle single image input
-        if images.ndim == 3:
-            images = images.unsqueeze(0)
 
         # Extract image features
         features = self.backbone(images)
@@ -124,9 +123,13 @@ class DETR(nn.Module):
         boxes = boxes[:, -1, 0]
         logits = logits[:, -1, 0]
 
-        scores, labels = logits.sigmoid().max(dim=-1)
+        # Return unfiltered predictions for ONNX export
+        if export:
+            return boxes, logits
 
         # Filter predictions
+        scores, labels = logits.sigmoid().max(dim=-1)
+
         detections = []
         for image_boxes, image_labels, image_scores in zip(boxes, labels, scores):
             # Apply confidence thresholding
@@ -144,10 +147,16 @@ class DETR(nn.Module):
 
             detections.append(Detections(image_boxes, image_labels, image_scores, image_categories))
 
-        return detections if len(detections) > 1 else detections[0]
+        return detections
 
     @torch.no_grad()
     def _initialize_weights(self, pretrained_weights: Union[str, Path] = None) -> None:
+        """
+        Initialize model weights, optionally loading from a pretrained checkpoint.
+
+        Args:
+            pretrained_weights: Path to a pretrained weights file or an accelerate checkpoint directory containing a `model.safetensors` file.
+        """
         # Check for BatchNorm layers
         for module_name, module in self.backbone.named_modules():
             if isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
@@ -158,16 +167,19 @@ class DETR(nn.Module):
 
         pretrained_weights = Path(pretrained_weights)
 
-        # Attempt to find the model weights in an accelerate checkpoint directory
+        # Attempt to find the model weights in an accelerate checkpoint if a directory is provided
         if pretrained_weights.is_dir():
-            checkpoints = sorted(
-                dir for dir in pretrained_weights.iterdir() if dir.is_dir() and len(list(dir.glob("model.safetensors"))) > 0
-            )
+            if (pretrained_weights / "model.safetensors").exists():
+                # Weights directly point to the checkpoint folder
+                pretrained_weights = pretrained_weights / "model.safetensors"
+            else:
+                # Weights point to a parent folder containing multiple checkpoint folders
+                checkpoints = sorted(d for d in pretrained_weights.iterdir() if d.is_dir() and len(list(d.glob("model.safetensors"))) > 0)
 
-            if not checkpoints:
-                raise FileNotFoundError(f"No checkpoint directories containing 'model.safetensors' found in '{pretrained_weights}'.")
+                if not checkpoints:
+                    raise FileNotFoundError(f"No checkpoint directories containing 'model.safetensors' found in '{pretrained_weights}'.")
 
-            pretrained_weights = checkpoints[-1] / "model.safetensors"
+                pretrained_weights = checkpoints[-1] / "model.safetensors"
 
         logging.info(f"Loading pretrained weights from '{pretrained_weights}'.")
 
