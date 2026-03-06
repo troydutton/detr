@@ -222,7 +222,7 @@ class TransformerDecoder(Module):
         query_embed = self.queries.weight[: num_groups * self.num_queries].unsqueeze(0)
 
         # Generate reference boxes from the query embeddings
-        feature_xy = torch.sigmoid(self.reference_points(query_embed))
+        feature_xy = torch.sigmoid(self.reference_points(query_embed)).clamp(0, 1)
         feature_wh = torch.full_like(feature_xy, 0.1)
         query_ref = torch.cat([feature_xy, feature_wh], dim=-1)
 
@@ -407,7 +407,7 @@ class TransformerDecoder(Module):
         xy = references[..., :2] + (offsets[..., :2] * references[..., 2:])
         wh = references[..., 2:] * offsets[..., 2:].exp()
 
-        return torch.cat([xy, wh], dim=-1)
+        return torch.cat([xy, wh], dim=-1).clamp(0, 1)
 
     @torch.no_grad()
     def _initialize_weights(self) -> None:
