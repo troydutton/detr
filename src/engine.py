@@ -113,12 +113,13 @@ def train_one_epoch(
     data = tqdm(data, desc=f"Training (Epoch {epoch})", dynamic_ncols=True, disable=not accelerator.is_main_process)
     for images, targets in data:
         # Zero the gradients
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
 
-        # Forward pass and loss computation
-        with accelerator.autocast():
-            predictions = model(images, targets)
-            losses = criterion(predictions, targets, accelerator)
+        # Forward pass
+        predictions = model(images, targets)
+
+        # Calculate the loss
+        losses = criterion(predictions, targets, accelerator)
 
         # Backward pass & optimizer step
         accelerator.backward(losses["overall"])
@@ -127,7 +128,7 @@ def train_one_epoch(
 
         # Step the learning rate scheduler every update
         scheduler.step()
-        losses = {k: torch.mean(accelerator.gather(v.detach())).item() for k, v in losses.items()}
+        losses = {k: torch.mean(accelerator.reduce(v.detach(), reduction="mean")).item() for k, v in losses.items()}
 
         # Log the loss
         if accelerator.is_main_process:
@@ -172,13 +173,13 @@ def evaluate(
 
     data = tqdm(data, desc=f"Validation (Epoch {epoch})", dynamic_ncols=True, disable=not accelerator.is_main_process)
     for images, targets in data:
-        # Forward pass and loss computation
-        with accelerator.autocast():
-            predictions = model(images)
+        # Forward pass
+        predictions = model(images)
 
-            batch_losses = criterion(predictions, targets, accelerator)
+        # Calculate the loss
+        batch_losses = criterion(predictions, targets, accelerator)
 
-        losses = {k: losses.get(k, 0) + torch.mean(accelerator.gather_for_metrics(v)).item() for k, v in batch_losses.items()}
+        losses = {k: losses.get(k, 0) + torch.mean(accelerator.reduce(v, reduction="mean")).item() for k, v in batch_losses.items()}
 
         # Update the evaluator
         evaluator.update(predictions, targets, accelerator)
