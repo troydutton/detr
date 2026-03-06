@@ -32,14 +32,17 @@ class MultiHeadDeformableAttention(nn.Module):
             features: Multi-level features with shape (batch_size, num_features, embed_dim).
             dimensions: Width and height of each feature level with shape (num_levels, 2).
         """
+
+        # We perform all operations in fp32 for numerical stability, and cast back to the input dtype at the end
         batch_size, num_queries, embed_dim = queries.shape
+        dtype = queries.dtype
 
         # Compute sampling locations: (x + (Δx * w), y + (Δy * h))
-        query_reference = query_reference.view(batch_size, num_queries, 1, 1, 1, -1)
-        offsets = self.sampling_offsets(queries).view(batch_size, num_queries, self.num_heads, self.num_levels, self.num_points, 2)
+        query_reference = query_reference.view(batch_size, num_queries, 1, 1, 1, -1).float()
+        offsets = self.sampling_offsets(queries).view(batch_size, num_queries, self.num_heads, self.num_levels, self.num_points, 2).float()
 
         if query_reference.shape[-1] == 2:  # Points -> (x + Δx, y + Δy)
-            offsets = offsets / dimensions.view(1, 1, 1, self.num_levels, 1, 2)
+            offsets = offsets / dimensions.view(1, 1, 1, self.num_levels, 1, 2).float()
             points = query_reference + offsets
         elif query_reference.shape[-1] == 4:  # Boxes -> (x + (Δx * w), y + (Δy * h))
             offsets = offsets / (2 * self.num_points)
@@ -51,7 +54,7 @@ class MultiHeadDeformableAttention(nn.Module):
         points = (points * 2) - 1
 
         # Project features to value space
-        values = self.value_proj(features)
+        values = self.value_proj(features).float()
 
         # Split values and points by level (num_levels, batch_size * num_heads, num_queries, num_points, 2)
         values = values.split([w * h for w, h in dimensions], dim=1)
@@ -77,7 +80,9 @@ class MultiHeadDeformableAttention(nn.Module):
         sampled_values = torch.cat(sampled_values, dim=-1)
 
         # Calculate attention weights (normalized over the points across all levels)
-        attention_weights = self.attention_weights(queries).view(batch_size, num_queries, self.num_heads, self.num_levels * self.num_points)
+        attention_weights = (
+            self.attention_weights(queries).view(batch_size, num_queries, self.num_heads, self.num_levels * self.num_points).float()
+        )
         attention_weights = attention_weights.softmax(dim=-1)
         attention_weights = attention_weights.transpose(1, 2)
 
@@ -88,7 +93,7 @@ class MultiHeadDeformableAttention(nn.Module):
         output = output.reshape(batch_size, embed_dim, num_queries).transpose(1, 2)
 
         # Output projection
-        output = self.output_proj(output)
+        output = self.output_proj(output.to(dtype))
 
         return output
 
