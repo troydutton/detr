@@ -87,12 +87,12 @@ class TransformerDecoder(Module):
         self.class_head = Linear(embed_dim, num_classes)
 
         # Create the object query initialization components
-        if self.two_stage:  # Encoder proposals as initial queries
+        self.queries = nn.Embedding(num_groups * num_queries, embed_dim)
+        if self.two_stage:
             self.encoder_bbox_head = ModuleList([FFN(embed_dim, embed_dim, 4, 3) for _ in range(self.num_groups)])
             self.encoder_class_head = ModuleList([Linear(embed_dim, num_classes) for _ in range(self.num_groups)])
             self.encoder_projection = ModuleList([Sequential(Linear(embed_dim, embed_dim), LayerNorm(embed_dim)) for _ in range(self.num_groups)])  # fmt: skip
-        else:  # Learnable parameters as initial queries
-            self.queries = nn.Embedding(num_groups * num_queries, embed_dim)
+        else:
             self.reference_points = Linear(embed_dim, 2)
 
         if self.denoise_queries:  # Denoising queries
@@ -256,7 +256,7 @@ class TransformerDecoder(Module):
         batch_size, num_features, _ = features.embed.shape
         device = features.embed.device
 
-        query_embed, query_ref = [], []
+        query_ref = []
         encoder_boxes, encoder_logits = [], []
 
         # TODO: Optimize proposal generation by batching group calculations
@@ -277,15 +277,17 @@ class TransformerDecoder(Module):
             batch_indices = torch.arange(batch_size, device=device).unsqueeze(1)
             topk_indices = scores.topk(self.num_queries, dim=1).indices
 
-            query_embed.append(feature_embed[batch_indices, topk_indices])
             query_ref.append(boxes[batch_indices, topk_indices])
             encoder_boxes.append(boxes)
             encoder_logits.append(logits)
 
-        query_embed = torch.cat(query_embed, dim=1)
         query_ref = torch.cat(query_ref, dim=1)
         encoder_boxes = torch.cat(encoder_boxes, dim=1)
         encoder_logits = torch.cat(encoder_logits, dim=1)
+
+        # Query embeddings remain learnable
+        query_embed = self.queries.weight[: num_groups * self.num_queries].unsqueeze(0)
+        query_embed = query_embed.expand(batch_size, -1, -1)
 
         # Generate positional embeddings from the reference boxes
         query_pos = self.pos_projection(build_pos_embed(query_ref, 2 * self.embed_dim))
