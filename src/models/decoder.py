@@ -230,9 +230,9 @@ class TransformerDecoder(Module):
         query_pos: Tensor = self.pos_projection(build_pos_embed(query_ref, 2 * self.embed_dim))
 
         # Expand the queries across the batch size
-        query_embed = query_embed.expand(batch_size, -1, -1)
-        query_pos = query_pos.expand(batch_size, -1, -1)
-        query_ref = query_ref.expand(batch_size, -1, -1)
+        query_embed = query_embed.expand(batch_size, -1, -1).clone()
+        query_pos = query_pos.expand(batch_size, -1, -1).clone()
+        query_ref = query_ref.expand(batch_size, -1, -1).clone()
 
         return Queries(embed=query_embed, pos=query_pos, reference=query_ref, num_groups=num_groups, num_queries=self.num_queries)
 
@@ -287,7 +287,7 @@ class TransformerDecoder(Module):
 
         # Query embeddings remain learnable
         query_embed = self.queries.weight[: num_groups * self.num_queries].unsqueeze(0)
-        query_embed = query_embed.expand(batch_size, -1, -1)
+        query_embed = query_embed.expand(batch_size, -1, -1).clone()
 
         # Generate positional embeddings from the reference boxes
         query_pos = self.pos_projection(build_pos_embed(query_ref, 2 * self.embed_dim))
