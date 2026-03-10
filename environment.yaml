@@ -19,6 +19,8 @@ dependencies:
   - nvidia-ml-py
   - transformers
   - timm
+  - fvcore
+  - iopath
   - onnxscript
   - wandb
   - hydra-core
