@@ -34,6 +34,8 @@ def main(args: DictConfig) -> None:
     args["model"]["pretrained_weights"] = checkpoint
     args["model"]["categories"] = val_dataset.get_categories()
     args["model"]["decoder"]["num_classes"] = val_dataset.num_classes
+    args["model"]["decoder"]["num_groups"] = 1
+    args["model"]["decoder"]["denoise_queries"] = False
     model = DETR(**args["model"]).eval()
 
     # Override forward with an export-friendly predict

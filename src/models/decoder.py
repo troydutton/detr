@@ -88,6 +88,7 @@ class TransformerDecoder(Module):
 
         # Create the object query initialization components
         self.queries = nn.Embedding(num_groups * num_queries, embed_dim)
+        self.object_embed = nn.Embedding(1, embed_dim)
         if self.two_stage:
             self.encoder_bbox_head = ModuleList([FFN(embed_dim, embed_dim, 4, 3) for _ in range(self.num_groups)])
             self.encoder_class_head = ModuleList([Linear(embed_dim, num_classes) for _ in range(self.num_groups)])
@@ -97,7 +98,6 @@ class TransformerDecoder(Module):
 
         if self.denoise_queries:  # Denoising queries
             self.label_embed = nn.Embedding(num_classes, embed_dim)
-            self.object_embed = nn.Embedding(1, embed_dim)
             self.denoise_embed = nn.Embedding(1, embed_dim)
 
         # Mapping from positional encodings of reference boxes to their positional embeddings
@@ -149,8 +149,7 @@ class TransformerDecoder(Module):
             encoder_boxes = encoder_logits = None
 
         # Add a learnable task embedding to distinguish between object and denoising queries
-        if self.denoise_queries:
-            queries.embed += self.object_embed.weight[None, ...]
+        queries.embed += self.object_embed.weight[None, ...]
 
         if self.training and self.denoise_queries:
             queries = self._generate_denoising_queries(queries, targets)

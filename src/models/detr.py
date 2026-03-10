@@ -190,6 +190,10 @@ class DETR(nn.Module):
         else:
             raise ValueError(f"Unsupported pretrained weights format: {pretrained_weights}")
 
+        # During inference we initialize the model with a single query group
+        if len(self.decoder.queries.weight) < len(state_dict["decoder.queries.weight"]):
+            state_dict["decoder.queries.weight"] = state_dict["decoder.queries.weight"][: len(self.decoder.queries.weight)]
+
         incompatible = self.load_state_dict(state_dict, strict=False)
 
         if incompatible.missing_keys:
