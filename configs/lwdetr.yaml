@@ -1,0 +1,19 @@
+defaults:
+  - hydra: simple
+  - dataset: coco
+  - transforms: small
+  - model: lwdetr
+  - optimizer: lwdetr
+  - scheduler: lwdetr
+  - criterion: lwdetr
+  - _self_
+
+train:
+  output_dir: /path/to/output/dir
+  num_epochs: 24
+  batch_size: 8
+  num_workers: 4
+  save_period: 10
+  max_grad_norm: 0.1
+  random_seed: 42
+  checkpoint: Null

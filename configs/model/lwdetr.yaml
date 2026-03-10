@@ -1,0 +1,45 @@
+pretrained_weights: Null
+
+embed_dim: 256
+ffn_dim: 2048
+num_heads: 8
+num_points: 4
+num_levels: 4
+dropout: 0.1
+num_groups: 13
+num_queries: 300
+num_denoise_queries: 100
+pos_noise_scale: 0.4
+neg_noise_scale: 0.8
+label_noise_prob: 0.5
+
+backbone:
+  name: convnext_tiny.dinov3_lvd1689m
+  embed_dim: ${model.embed_dim}
+  num_levels: ${model.num_levels}
+  pretrained: True
+
+encoder:
+  num_layers: 0
+  embed_dim: ${model.embed_dim}
+
+decoder:
+  num_layers: 6
+  two_stage: True
+  refine_boxes: True
+  denoise_queries: True
+  num_groups: ${model.num_groups}
+  num_queries: ${model.num_queries}
+  num_denoise_queries: ${model.num_denoise_queries} 
+  embed_dim: ${model.embed_dim}
+  pos_noise_scale: ${model.pos_noise_scale}
+  neg_noise_scale: ${model.neg_noise_scale}
+  label_noise_prob: ${model.label_noise_prob}
+  layer:
+    _target_: models.decoder.DeformableDecoderLayer
+    embed_dim: ${model.embed_dim}
+    ffn_dim: ${model.ffn_dim}
+    num_heads: ${model.num_heads}
+    num_points: ${model.num_points}
+    num_levels: ${model.num_levels}
+    dropout: ${model.dropout}
