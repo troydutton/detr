@@ -11,6 +11,8 @@ from torchvision.ops.boxes import box_area, box_convert
 from torchvision.transforms.v2.functional import erase
 from torchvision.tv_tensors import BoundingBoxes, wrap
 
+from utils.boxes import box_intersection
+
 IMNET_MEAN = [0.485, 0.456, 0.406]
 IMNET_STD = [0.229, 0.224, 0.225]
 LABEL_KEYS = ["boxes", "labels", "area", "iscrowd"]
@@ -179,28 +181,3 @@ def make_transformations(
         )
 
     raise ValueError(f"Invalid transformation split: {split}")
-
-
-def box_intersection(boxes1: Tensor, boxes2: Tensor) -> Tensor:
-    """
-    Computes the intersection between two sets of boxes, stolen from `torchvision.ops.boxes`.
-
-    Expects boxes in xyxy format. Boxes can be either be absolute or normalized
-    as long as the format is consistent between boxes.
-
-    Args:
-        boxes1: First set of boxes, with shape (N, 4).
-        boxes2: Second set of boxes, with shape (M, 4).
-
-    Returns:
-        intersection_area: The intersection between the boxes, with shape (N, M)
-
-    """
-
-    top_left = torch.max(boxes1[:, None, :2], boxes2[:, :2])  # (N,M,2)
-    bottom_right = torch.min(boxes1[:, None, 2:], boxes2[:, 2:])  # (N,M,2)
-
-    width_height = (bottom_right - top_left).clamp(min=0)  # (N,M,2)
-    intersection_area = width_height[:, :, 0] * width_height[:, :, 1]  # (N,M)
-
-    return intersection_area

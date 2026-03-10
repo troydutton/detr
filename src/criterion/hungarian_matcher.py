@@ -49,8 +49,8 @@ class HungarianMatcher:
         """
 
         # Get batch information
-        matches_per_image = [len(target["labels"]) for target in targets]
         batch_size, num_layers, num_groups, num_queries, _ = predictions.logits.shape
+        matches_per_image = [min(len(target["labels"]), num_queries) for target in targets]
         device = predictions.logits.device
 
         # TODO: Evaluate batching cost calculations across images
@@ -78,13 +78,13 @@ class HungarianMatcher:
             total_cost.clamp_(-1e6, 1e6)
 
             # Move to CPU once and reshape to (num_layers, num_groups, num_queries, num_targets)
-            total_cost_cpu = total_cost.cpu().view(num_layers, num_groups, num_queries, -1)
+            total_cost = total_cost.cpu().view(num_layers, num_groups, num_queries, -1)
 
             image_target_indices = []
             for l in range(num_layers):
                 for g in range(num_groups):
                     # Extract the specific cost matrix for this layer and group
-                    cost_matrix = total_cost_cpu[l, g]
+                    cost_matrix = total_cost[l, g]
 
                     # Solve the linear sum assignment problem
                     indices = linear_sum_assignment(cost_matrix)
@@ -147,6 +147,7 @@ class HungarianMatcher:
         """
 
         # We use binary focal loss for classification
+        prediction_logits = prediction_logits[..., target_labels]
         prediction_probs = prediction_logits.sigmoid()
 
         # Numerically stable version of α * (1 - prob) ** γ * -prob.log()
@@ -155,6 +156,6 @@ class HungarianMatcher:
         # Numerically stable version of (1 - α) * prob ** γ * -(1 - prob).log()
         neg_class_cost = (1 - self.alpha) * (prediction_probs**self.gamma) * (-F.logsigmoid(-prediction_logits))
 
-        class_cost = pos_class_cost[..., target_labels] - neg_class_cost[..., target_labels]  # (num_preds, num_classes)
+        class_cost = pos_class_cost - neg_class_cost  # (num_preds, num_targets)
 
         return class_cost

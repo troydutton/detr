@@ -317,7 +317,7 @@ class TransformerDecoder(Module):
         # Get batch information
         device = queries.embed.device
         batch_size, _, _ = queries.embed.shape
-        objects_per_image = [len(target["labels"]) for target in targets]
+        objects_per_image = [min(len(t["labels"]), self.num_denoise_queries // 2) for t in targets]
 
         # Skip denoising if there are no objects in the batch
         if sum(objects_per_image) == 0:
@@ -331,7 +331,7 @@ class TransformerDecoder(Module):
         attention_mask = torch.ones(batch_size, self.num_denoise_queries, self.num_denoise_queries, dtype=torch.bool, device=device)
 
         for i, (target, num_objects) in enumerate(zip(targets, objects_per_image)):
-            boxes, labels = target["boxes"], target["labels"]
+            boxes, labels = target["boxes"][:num_objects], target["labels"][:num_objects]
 
             if num_objects == 0:
                 continue
