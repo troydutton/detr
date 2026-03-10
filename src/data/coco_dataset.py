@@ -59,7 +59,7 @@ class CocoDataset(Dataset):
             idx: Index of the image to retrieve.
 
         Returns:
-            image: Image tensor.
+            image: Image tensor with shape (channels, height, width).
             #### target
             Image annotations, including
                 - `boxes`: Bounding boxes in CXCYWH format, normalized to [0, 1].
