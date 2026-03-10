@@ -37,8 +37,9 @@ class Backbone(nn.Module):
         self.embed_dim = embed_dim
         self.num_levels = num_levels
 
-        # Take one less level from the backbone because we use an extra projection on the final feature map
-        out_indices = list(range(-max(num_levels - 1, 1), 0))
+        # When using 4 or more levels, we take one less level from the backbone
+        # because we use an extra projection on the final feature map
+        out_indices = list(range(-(num_levels - 1 if num_levels > 3 else num_levels), 0))
 
         # Build the backbone in feature-only mode
         self.backbone: BackboneType = timm.create_model(
@@ -55,7 +56,7 @@ class Backbone(nn.Module):
             in_channels = self.backbone.feature_info[i]["num_chs"]
             self.projections.append(nn.Conv2d(in_channels, embed_dim, kernel_size=1))
 
-        if num_levels > 1:
+        if num_levels > 3:
             in_channels = self.backbone.feature_info[-1]["num_chs"]
             self.projections.append(nn.Conv2d(in_channels, embed_dim, kernel_size=3, stride=2, padding=1))
 
@@ -90,14 +91,14 @@ class Backbone(nn.Module):
         backbone_features = self.backbone(images)  # List of features with shape (batch_size, channels, feature_height, feature_width)
 
         # In multi-scale, an additional downsampled feature is created from the final backbone feature.
-        if self.num_levels > 1:
+        if self.num_levels > 3:
             backbone_features.append(backbone_features[-1])
 
         # Build multi-level features for the transformer encoder
         all_features, all_pos, all_references, all_levels, dimensions = [], [], [], [], []
 
         for level, (features, projection) in enumerate(zip(backbone_features, self.projections)):
-            level_pos = self.level_pos(torch.tensor(level, device=device))
+            level_pos: Tensor = self.level_pos(torch.tensor(level, device=device))
 
             # Project into the desired embedding dimension
             features: Tensor = projection(features)
