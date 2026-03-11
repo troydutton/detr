@@ -46,24 +46,18 @@ def main(args: DictConfig) -> None:
     flops_analyzer = FlopCountAnalysis(model, image)
     flops = flops_analyzer.total()
 
-    print(f"Total FLOPs (GFLOPs): {flops / 1e9:.2f}")
-
-    # Print detailed flop table
     print("\nFLOPs Table:")
     print(flop_count_table(flops_analyzer, show_param_shapes=False))
 
     # Compute Latency
     print(f"\nComputing average latency ({WARMUP_STEPS} warmup steps, {ACTIVE_STEPS} active steps)...")
 
-    # Warmup
     with torch.no_grad():
         for _ in range(WARMUP_STEPS):
             _ = model(image)
 
-    # Timing variables
     starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
 
-    # Benchmark loop
     with torch.no_grad():
         starter.record()
         for _ in range(ACTIVE_STEPS):
@@ -75,9 +69,12 @@ def main(args: DictConfig) -> None:
 
     avg_latency_ms = total_time_ms / ACTIVE_STEPS
     fps = 1000.0 / avg_latency_ms
+    num_params = sum(p.numel() for p in model.parameters()) / 1e6
 
     print("=" * 60)
-    print(f"Average Latency: {avg_latency_ms:.2f} ms")
+    print(f"Parameters: {num_params:.2f} M")
+    print(f"Operations: {flops / 1e9:.2f} GFLOPs")
+    print(f"Latency:    {avg_latency_ms:.2f} ms")
     print(f"Throughput: {fps:.2f} FPS")
     print("=" * 60)
 
