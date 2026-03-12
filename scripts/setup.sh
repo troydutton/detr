@@ -23,5 +23,8 @@ conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib
 # Package installation
 pip install --editable .
 
+# Weird gmpy2 error
+pip install --upgrade gmpy2
+
 # Hooks
 pre-commit install
