@@ -17,6 +17,9 @@ from utils.misc import silence_stdout
 COCOAnnotations = List[Dict[str, Any]]
 Target = Dict[str, Union[Tensor, BoundingBoxes]]
 
+#  Allow loading large images without hitting decompression bomb errors
+PIL.Image.MAX_IMAGE_PIXELS = None
+
 
 class CocoDataset(Dataset):
     """
