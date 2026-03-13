@@ -25,6 +25,7 @@ def train(
     num_epochs: int,
     accelerator: Accelerator,
     output_dir: Union[str, Path],
+    start_epoch: int = 0,
     save_period: int = 1,
     max_grad_norm: float = 0.1,
 ) -> None:
@@ -42,11 +43,12 @@ def train(
         num_epochs: Number of epochs to train for.
         accelerator: Accelerator object.
         output_dir: Parent directory to save the weights to.
+        start_epoch: Epoch to start training from, optional.
         save_period: Period (in epochs) to save the model weights, optional.
         max_grad_norm: Maximum gradient norm for clipping, optional.
     """
 
-    for epoch in range(num_epochs):
+    for epoch in range(start_epoch, num_epochs):
         # Train for a single epoch
         train_one_epoch(
             model=model,

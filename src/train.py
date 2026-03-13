@@ -102,6 +102,7 @@ def main(args: DictConfig) -> None:
     checkpoint = args["train"].pop("checkpoint", None)
 
     if checkpoint is not None:
+        args["train"]["start_epoch"] = int(Path(checkpoint).name)
         accelerator.load_state(checkpoint)
 
     del args["train"]["batch_size"]
