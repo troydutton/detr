@@ -2,16 +2,15 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug DETR",
+            "name": "Eval",
             "type": "debugpy",
             "request": "launch",
             "module": "accelerate.commands.launch",
             "args": [
                 "--num_processes=1",
                 "--main_process_port=42069",
-                "src/train.py",
-                "--config-name=ddetr",
-                "train.output_dir=/data/troy/models/detr/debug",
+                "src/eval.py",
+                "--config-name=lwdetr",
                 "train.batch_size=2",
             ],
             "console": "integratedTerminal",
@@ -19,7 +18,28 @@
             "env": {
                 "CUDA_VISIBLE_DEVICES": "6"
             },
-            "justMyCode": true 
+            "justMyCode": true
+        },
+        {
+            "name": "Train",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "accelerate.commands.launch",
+            "args": [
+                "--num_processes=1",
+                "--main_process_port=42069",
+                "src/train.py",
+                "--config-name=lwdetr",
+                "train.output_dir=/data/troy/models/detr/debug",
+                "train.batch_size=2",
+                "dataset=coco",
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "6"
+            },
+            "justMyCode": true
         }
     ]
 }
