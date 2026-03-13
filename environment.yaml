@@ -2,12 +2,14 @@ name: detr
 
 channels:
   - conda-forge
+  - nvidia
 
 dependencies:
   - python=3.12
   - pip
-  - numpy<2
   - libstdcxx-ng
+  - cuda-toolkit=12.6
+  - numpy<2
   - scipy
   - scipy-stubs
   - scikit-learn
@@ -16,7 +18,6 @@ dependencies:
   - matplotlib
   - pycocotools
   - accelerate
-  - nvidia-ml-py
   - transformers
   - timm
   - fvcore

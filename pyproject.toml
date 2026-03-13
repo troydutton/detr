@@ -5,10 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "detr"
 version = "0.1.0"
-description = "DETR implementation"
+description = "Detection Transformers"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["gmpy2", "torch-linear-assignment"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
