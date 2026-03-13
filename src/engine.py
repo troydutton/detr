@@ -146,7 +146,7 @@ def evaluate(
     data: DataLoader,
     epoch: int,
     accelerator: Accelerator,
-) -> Tuple[Dict[str, float], Dict[str, float]]:
+) -> Tuple[Dict[str, float], Dict[str, Dict[str, float]]]:
     """
     Evaluate a model.
 

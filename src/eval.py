@@ -2,6 +2,7 @@ import logging
 from typing import Any, Dict, Union
 
 import hydra
+import numpy as np
 from accelerate import Accelerator
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
@@ -14,6 +15,10 @@ from evaluators import CocoEvaluator
 from models import DETR
 
 Args = Dict[str, Union[Any, "Args"]]
+
+GREEN = "\033[92m"
+RED = "\033[91m"
+RESET = "\033[0m"
 
 
 @hydra.main(config_path="../configs", config_name="detr", version_base=None)
@@ -49,8 +54,6 @@ def main(args: DictConfig) -> None:
     args["model"]["pretrained_weights"] = checkpoint
     args["model"]["categories"] = val_dataset.get_categories()
     args["model"]["decoder"]["num_classes"] = val_dataset.num_classes
-    args["model"]["decoder"]["num_groups"] = 1
-    args["model"]["decoder"]["denoise_queries"] = False
     model = DETR(**args["model"])
 
     # Distribute evaluation components
@@ -60,7 +63,7 @@ def main(args: DictConfig) -> None:
     criterion: Criterion = instantiate(args["criterion"])
 
     # Create evaluator
-    evaluator: CocoEvaluator = CocoEvaluator(coco_targets=val_dataset.coco)
+    evaluator: CocoEvaluator = CocoEvaluator(coco_targets=val_dataset.coco, class_metrics=True)
 
     # Start evaluation
     losses, metrics = evaluate(
@@ -82,9 +85,55 @@ def main(args: DictConfig) -> None:
         print(f"Dataset: {val_dataset.root / val_dataset.split}")
         print(f"{' Losses ':-^{width}}")
         print(", ".join([f"{k}: {v:.2f}" for k, v in losses.items()]))
+
+        overall_metrics = metrics.pop("overall")
+        col_names = list(overall_metrics.keys())
+
+        # Compute standard deviation for each metric across valid classes
+        stds = {}
+        for k in col_names:
+            valid_vals = [m[k] for m in metrics.values() if m[k] != -1]
+            stds[k] = np.std(valid_vals) if valid_vals else 0
+
+        col_widths = [max(len(name), 6) for name in col_names]
+        header_fmt = "{:<20} " + " ".join([f"{{:>{w}}}" for w in col_widths])
+        row_fmt = "{:<20} " + " ".join([f"{{:>{w}.2f}}" for w in col_widths])
+
+        # Header
         print(f"{' Metrics ':-^{width}}")
-        print(", ".join([f"{k}: {v:.2f}" for k, v in metrics.items()]))
+        print(header_fmt.format("Class", *col_names))
+        print("-" * width)
+
+        # Overall metrics
+        print(row_fmt.format("overall", *[overall_metrics[k] for k in col_names]))
+
+        # Class metrics
+        for name, values in metrics.items():
+            row = [f"{name:<20}"]
+            for k, w in zip(col_names, col_widths):
+                val = values[k]
+                mean_val = overall_metrics[k]
+                val_str = f"{val:>{w}.2f}"
+
+                if mean_val == 0 or stds[k] == 0 or val == -1:
+                    row.append(val_str)
+                else:
+                    if val > mean_val + stds[k]:
+                        color = GREEN
+                    elif val < mean_val - stds[k]:
+                        color = RED
+                    else:
+                        color = ""
+
+                    color_end = RESET if color else ""
+                    row.append(f"{color}{val_str}{color_end}")
+
+            print(" ".join(row))
+
+        # Footer
         print("=" * width)
+
+    accelerator.end_training()
 
 
 if __name__ == "__main__":

@@ -11,49 +11,55 @@ from utils.misc import silence_stdout
 
 
 @pytest.fixture
-def coco_path(tmp_path: Path) -> Path:
+def coco_gt(tmp_path: Path) -> COCO:
     """
-    Creates a dummy COCO dataset structure in a temporary directory.
+    Creates a dummy COCO dataset and returns the loaded COCO object.
     Includes an image with non-square dimensions and multiple annotations
     to test coordinate handling and class differentiation.
     """
-
     root = tmp_path
     split = "val2017"
 
-    # Replicate COCO directory structure
     (root / "annotations").mkdir(parents=True, exist_ok=True)
-    (root / split).mkdir(parents=True, exist_ok=True)
 
-    # Dummy image parameters
-    width, height = 100, 80
-    image_id = 1
-    file_name = "000000000001.jpg"
-
-    # Dummy annotations
     annotations = {
-        "images": [{"id": image_id, "file_name": file_name, "height": height, "width": width}],
+        "images": [{"id": 1, "file_name": "000000000001.jpg", "height": 80, "width": 100}],
         "annotations": [
-            {"id": 1, "image_id": image_id, "category_id": 1, "bbox": [10, 20, 30, 40], "area": 1200, "iscrowd": 0},
-            {"id": 2, "image_id": image_id, "category_id": 2, "bbox": [50, 10, 20, 30], "area": 600, "iscrowd": 0},
+            {"id": 1, "image_id": 1, "category_id": 1, "bbox": [10, 20, 30, 40], "area": 1200, "iscrowd": 0},
+            {"id": 2, "image_id": 1, "category_id": 2, "bbox": [50, 10, 20, 30], "area": 600, "iscrowd": 0},
         ],
         "categories": [{"id": 1, "name": "person"}, {"id": 2, "name": "dog"}],
     }
-    with open(root / f"annotations/instances_{split}.json", "w") as f:
+
+    ann_file = root / f"annotations/instances_{split}.json"
+    with open(ann_file, "w") as f:
         json.dump(annotations, f)
 
-    return root
-
-
-def test_coco_evaluator_update_and_compute(coco_path: Path):
-    root = coco_path
-    split = "val2017"
-    ann_file = root / f"annotations/instances_{split}.json"
-
-    # Initialize COCO GT
     with silence_stdout():
-        coco_gt = COCO(ann_file)
+        return COCO(ann_file)
 
+
+def create_mock_predictions(boxes, classes, num_layers=1, num_groups=1, num_classes=3):
+    """
+    Helper to quickly create mock 4D prediction tensors.
+    Boxes should be of shape (batch, queries, 4).
+    Classes should be a list of lists representing the correct class per query.
+    """
+    boxes = torch.tensor(boxes, dtype=torch.float32)
+    batch_size, num_queries, _ = boxes.shape
+
+    # Expand to (batch, layers, groups, queries, 4)
+    pred_boxes = boxes.unsqueeze(1).unsqueeze(1).expand(batch_size, num_layers, num_groups, num_queries, 4).clone()
+
+    pred_logits = torch.zeros(batch_size, num_layers, num_groups, num_queries, num_classes)
+    for b in range(batch_size):
+        for q, c in enumerate(classes[b]):
+            pred_logits[b, -1, 0, q, c] = 100.0  # Set high score for correct class in final layer
+
+    return Predictions(logits=pred_logits, boxes=pred_boxes)
+
+
+def test_coco_evaluator_simple(coco_gt: COCO):
     evaluator = CocoEvaluator(coco_gt)
 
     # Check label map
@@ -66,36 +72,16 @@ def test_coco_evaluator_update_and_compute(coco_path: Path):
     # Query 1: matches annotation 2 (cat 2, bbox [50, 10, 20, 30] xywh)
     # Target size: 100x80 (w, h)
 
-    # Box transformation: cx = x + w/2, cy = y + h/2. Scale by w=100, h=80.
-    # Box 1: x=10, y=20, w=30, h=40
-    # cx = 25, cy = 40. Normalized: cx=0.25, cy=0.5, w=0.3, h=0.5
+    # Box 1: x=10, y=20, w=30, h=40 -> cx=0.25, cy=0.5, w=0.3, h=0.5
+    # Box 2: x=50, y=10, w=20, h=30 -> cx=0.6, cy=0.3125, w=0.2, h=0.375
+    preds = create_mock_predictions(
+        boxes=[[[0.25, 0.5, 0.3, 0.5], [0.6, 0.3125, 0.2, 0.375]]],
+        classes=[[0, 1]],  # Query 0 -> class 0 (person), Query 1 -> class 1 (dog)
+    )
 
-    # Box 2: x=50, y=10, w=20, h=30
-    # cx = 60, cy = 25. Normalized: cx=0.6, cy=0.3125, w=0.2, h=0.375
-
-    # 4D predictions: (batch, layers, groups, queries, *)
-    num_layers = 1
-    # [1, 1, 1, 2, 4]
-    pred_boxes = torch.tensor([[0.25, 0.5, 0.3, 0.5], [0.6, 0.3125, 0.2, 0.375]]).unsqueeze(0).unsqueeze(0).unsqueeze(0)
-
-    pred_logits = torch.zeros(1, num_layers, 1, 2, 3)  # 2 classes + 1 background.
-    # Logits: high score for correct class.
-    # Query 0: class 0 (cat ID 1).
-    pred_logits[0, 0, 0, 0, 0] = 100.0  # High logit for softmax
-    pred_logits[0, 0, 0, 0, 1] = 0.0
-    pred_logits[0, 0, 0, 0, 2] = 0.0
-
-    # Query 1: class 1 (cat ID 2).
-    pred_logits[0, 0, 0, 1, 1] = 100.0
-    pred_logits[0, 0, 0, 1, 0] = 0.0
-    pred_logits[0, 0, 0, 1, 2] = 0.0
-
-    predictions = (Predictions(logits=pred_logits, boxes=pred_boxes), None, None)
-
-    # Targets only need image_id and orig_size
     targets = [{"image_id": torch.tensor(1), "orig_size": torch.tensor([80, 100])}]  # h, w
 
-    evaluator.update(predictions, targets)
+    evaluator.update((preds, None, None), targets)
 
     results = evaluator.predictions
     assert len(results) == 2
@@ -115,52 +101,25 @@ def test_coco_evaluator_update_and_compute(coco_path: Path):
     # Test Compute
     # Since predictions are perfect, AP should be 1.0
     metrics = evaluator.compute()
-    assert metrics["AP"] == pytest.approx(1.0, abs=1e-4)
-    assert metrics["AP50"] == pytest.approx(1.0, abs=1e-4)
-    assert metrics["AP75"] == pytest.approx(1.0, abs=1e-4)
+    assert metrics["overall"]["AP"] == pytest.approx(1.0, abs=1e-4)
+    assert metrics["overall"]["AP50"] == pytest.approx(1.0, abs=1e-4)
+    assert metrics["overall"]["AP75"] == pytest.approx(1.0, abs=1e-4)
 
 
-def test_coco_evaluator_multi_layer_uses_final_only(coco_path: Path):
+def test_coco_evaluator_multi_layer(coco_gt: COCO):
     """
     Test that CocoEvaluator only uses the final layer for evaluation,
     ignoring intermediate decoder layer outputs.
     """
-    root = coco_path
-    split = "val2017"
-    ann_file = root / f"annotations/instances_{split}.json"
-
-    # Initialize COCO GT
-    with silence_stdout():
-        coco_gt = COCO(ann_file)
-
     evaluator = CocoEvaluator(coco_gt)
 
-    # Create predictions with 6 layers (simulating decoder outputs)
-    # Intermediate layers have wrong predictions, final layer has correct ones
-    num_layers = 6
-    batch_size = 1
-    num_groups = 1
-    num_queries = 2
-
-    # Initialize with zeros (all predictions wrong)
-    pred_boxes = torch.zeros(batch_size, num_layers, num_groups, num_queries, 4)
-    pred_logits = torch.zeros(batch_size, num_layers, num_groups, num_queries, 3)
-
-    # Set correct predictions only in final layer
-    # Box 1: x=10, y=20, w=30, h=40 -> normalized cxcywh: [0.25, 0.5, 0.3, 0.5]
-    # Box 2: x=50, y=10, w=20, h=30 -> normalized cxcywh: [0.6, 0.3125, 0.2, 0.375]
-    pred_boxes[0, -1, 0, 0] = torch.tensor([0.25, 0.5, 0.3, 0.5])
-    pred_boxes[0, -1, 0, 1] = torch.tensor([0.6, 0.3125, 0.2, 0.375])
-
-    # High scores for correct classes in final layer only
-    pred_logits[0, -1, 0, 0, 0] = 100.0  # Query 0: class 0 (cat ID 1)
-    pred_logits[0, -1, 0, 1, 1] = 100.0  # Query 1: class 1 (cat ID 2)
-
-    predictions = (Predictions(logits=pred_logits, boxes=pred_boxes), None, None)
+    # create_mock_predictions already puts zeroes in intermediate layers
+    # and correct predictions only in the final layer
+    preds = create_mock_predictions(boxes=[[[0.25, 0.5, 0.3, 0.5], [0.6, 0.3125, 0.2, 0.375]]], classes=[[0, 1]], num_layers=6)
 
     targets = [{"image_id": torch.tensor(1), "orig_size": torch.tensor([80, 100])}]  # h, w
 
-    evaluator.update(predictions, targets)
+    evaluator.update((preds, None, None), targets)
 
     results = evaluator.predictions
     assert len(results) == 2
@@ -179,74 +138,57 @@ def test_coco_evaluator_multi_layer_uses_final_only(coco_path: Path):
 
     # Since final layer predictions are perfect, AP should be 1.0
     metrics = evaluator.compute()
-    assert metrics["AP"] == pytest.approx(1.0, abs=1e-4)
+    assert metrics["overall"]["AP"] == pytest.approx(1.0, abs=1e-4)
 
 
-def test_coco_evaluator_multi_image_batch(coco_path: Path):
+def test_coco_evaluator_batch(tmp_path: Path):
     """
     Test CocoEvaluator with multiple images in a batch.
     """
-    root = coco_path
+    root = tmp_path
     split = "val2017"
     ann_file = root / f"annotations/instances_{split}.json"
+    (root / "annotations").mkdir(parents=True, exist_ok=True)
 
-    # Add second image to annotations
-    import json
-
-    with open(ann_file, "r") as f:
-        annotations = json.load(f)
-
-    # Add second image
-    width2, height2 = 120, 90
-    image_id2 = 2
-    file_name2 = "000000000002.jpg"
-    annotations["images"].append({"id": image_id2, "file_name": file_name2, "height": height2, "width": width2})
-
-    # Add annotation for second image
-    annotations["annotations"].append(
-        {"id": 3, "image_id": image_id2, "category_id": 1, "bbox": [20, 30, 40, 20], "area": 800, "iscrowd": 0}
-    )
+    # 2 images, 3 annotations total
+    annotations = {
+        "images": [
+            {"id": 1, "file_name": "000000000001.jpg", "height": 80, "width": 100},
+            {"id": 2, "file_name": "000000000002.jpg", "height": 90, "width": 120},
+        ],
+        "annotations": [
+            {"id": 1, "image_id": 1, "category_id": 1, "bbox": [10, 20, 30, 40], "area": 1200, "iscrowd": 0},
+            {"id": 2, "image_id": 1, "category_id": 2, "bbox": [50, 10, 20, 30], "area": 600, "iscrowd": 0},
+            {"id": 3, "image_id": 2, "category_id": 1, "bbox": [20, 30, 40, 20], "area": 800, "iscrowd": 0},
+        ],
+        "categories": [{"id": 1, "name": "person"}, {"id": 2, "name": "dog"}],
+    }
 
     with open(ann_file, "w") as f:
         json.dump(annotations, f)
 
-    # Initialize COCO GT
     with silence_stdout():
         coco_gt = COCO(ann_file)
 
     evaluator = CocoEvaluator(coco_gt)
 
-    # Create predictions for 2 images
-    batch_size = 2
-    num_layers = 1
-    num_groups = 1
-    num_queries = 2
-
-    pred_boxes = torch.zeros(batch_size, num_layers, num_groups, num_queries, 4)
-    pred_logits = torch.zeros(batch_size, num_layers, num_groups, num_queries, 3)
-
-    # Image 1: 2 objects
-    # Box 1: [10, 20, 30, 40] -> [0.25, 0.5, 0.3, 0.5]
-    # Box 2: [50, 10, 20, 30] -> [0.6, 0.3125, 0.2, 0.375]
-    pred_boxes[0, 0, 0, 0] = torch.tensor([0.25, 0.5, 0.3, 0.5])
-    pred_boxes[0, 0, 0, 1] = torch.tensor([0.6, 0.3125, 0.2, 0.375])
-    pred_logits[0, 0, 0, 0, 0] = 100.0  # class 0
-    pred_logits[0, 0, 0, 1, 1] = 100.0  # class 1
-
-    # Image 2: 1 object
-    # Box: [20, 30, 40, 20] -> cx=40, cy=40, w=40, h=20
-    # Normalized: cx=40/120=0.333, cy=40/90=0.444, w=40/120=0.333, h=20/90=0.222
-    pred_boxes[1, 0, 0, 0] = torch.tensor([0.333, 0.444, 0.333, 0.222])
-    pred_logits[1, 0, 0, 0, 0] = 100.0  # class 0
-
-    predictions = (Predictions(logits=pred_logits, boxes=pred_boxes), None, None)
+    # Image 1: [10, 20, 30, 40] -> cx=0.25, cy=0.5, w=0.3, h=0.5
+    # Image 1: [50, 10, 20, 30] -> cx=0.6, cy=0.3125, w=0.2, h=0.375
+    # Image 2: [20, 30, 40, 20] -> cx=0.333, cy=0.444, w=0.333, h=0.222
+    preds = create_mock_predictions(
+        boxes=[
+            [[0.25, 0.5, 0.3, 0.5], [0.6, 0.3125, 0.2, 0.375]],  # Batch 0
+            [[0.333, 0.444, 0.333, 0.222], [0, 0, 0, 0]],  # Batch 1, padded 2nd query
+        ],
+        classes=[[0, 1], [0, 0]],
+    )
 
     targets = [
-        {"image_id": torch.tensor(1), "orig_size": torch.tensor([80, 100])},  # h, w
+        {"image_id": torch.tensor(1), "orig_size": torch.tensor([80, 100])},
         {"image_id": torch.tensor(2), "orig_size": torch.tensor([90, 120])},
     ]
 
-    evaluator.update(predictions, targets)
+    evaluator.update((preds, None, None), targets)
 
     results = evaluator.predictions
     assert len(results) == 4  # 2 from image 1, 2 from image 2 (even if low scores)
@@ -260,5 +202,35 @@ def test_coco_evaluator_multi_image_batch(coco_path: Path):
 
     # Compute metrics
     metrics = evaluator.compute()
-    assert "AP" in metrics
-    assert metrics["AP"] >= 0.0  # AP should be reasonable (may not be 1.0 due to slight imprecision)
+    assert "overall" in metrics
+    assert "AP" in metrics["overall"]
+    assert metrics["overall"]["AP"] >= 0.0  # AP should be reasonable (may not be 1.0 due to slight imprecision)
+
+
+def test_coco_evaluator_class_metrics(coco_gt: COCO):
+    """
+    Test CocoEvaluator computes per-class metrics when class_metrics=True.
+    """
+    evaluator = CocoEvaluator(coco_gt, class_metrics=True)
+
+    # Person box is correct, Dog box is completely wrong
+    preds = create_mock_predictions(boxes=[[[0.25, 0.5, 0.3, 0.5], [0.9, 0.9, 0.1, 0.1]]], classes=[[0, 1]])
+
+    targets = [{"image_id": torch.tensor(1), "orig_size": torch.tensor([80, 100])}]  # h, w
+
+    evaluator.update((preds, None, None), targets)
+
+    metrics = evaluator.compute()
+
+    # Check overall
+    assert "overall" in metrics
+    # Person AP is 1.0, Dog AP is 0.0, so the category average (overall AP) is 0.5
+    assert metrics["overall"]["AP"] == pytest.approx(0.5, abs=1e-4)
+
+    # Check class specific metrics (person, dog from fixture categories)
+    assert "person" in metrics
+    assert "dog" in metrics
+
+    # Verify the predicted behaviors
+    assert metrics["person"]["AP"] == pytest.approx(1.0, abs=1e-4)
+    assert metrics["dog"]["AP"] == pytest.approx(0.0, abs=1e-4)

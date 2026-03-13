@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import torch
 from accelerate import Accelerator
 from pycocotools.coco import COCO
@@ -22,15 +23,18 @@ class CocoEvaluator(Evaluator):
 
     Args:
         coco_targets: Ground truth COCO dataset.
+        class_metrics: Whether to compute per-class metrics.
     """
 
-    def __init__(self, coco_targets: COCO) -> None:
+    def __init__(self, coco_targets: COCO, class_metrics: bool = False) -> None:
         self.coco_targets = coco_targets
+        self.class_metrics = class_metrics
         self.predictions: List[Dict[str, Any]] = []
 
         # Mapping from contiguous 0-indexed labels to category ids
         category_ids = sorted(coco_targets.getCatIds())
         self.label_to_category_id = {i: cat_id for i, cat_id in enumerate(category_ids)}
+        self.category_names = [cat["name"] for cat in coco_targets.loadCats(category_ids)]
 
     def reset(self) -> None:
         """Reset the internal state of the evaluator."""
@@ -99,7 +103,7 @@ class CocoEvaluator(Evaluator):
                     }
                 )
 
-    def compute(self) -> Dict[str, float]:
+    def compute(self) -> Dict[str, Dict[str, float]]:
         """
         Compute the metrics.
 
@@ -122,12 +126,48 @@ class CocoEvaluator(Evaluator):
         stats = coco_eval.stats
 
         metrics = {
-            "AP": stats[0],
-            "AP50": stats[1],
-            "AP75": stats[2],
-            "APs": stats[3],
-            "APm": stats[4],
-            "APl": stats[5],
+            "overall": {
+                "AP": stats[0],
+                "AP50": stats[1],
+                "AP75": stats[2],
+                "APs": stats[3],
+                "APm": stats[4],
+                "APl": stats[5],
+            }
         }
+
+        if self.class_metrics:
+            precision = coco_eval.eval["precision"][..., -1]  # (iou_thresholds, recall_thresholds, category_ids, area_ranges)
+
+            # Compute metrics, ignoring missing values
+            precision = np.ma.masked_values(precision, -1)
+            ap = np.mean(precision[:, :, :, 0], axis=(0, 1))
+            ap50 = np.mean(precision[0, :, :, 0], axis=0)
+            ap75 = np.mean(precision[5, :, :, 0], axis=0)
+            ap_s = np.mean(precision[:, :, :, 1], axis=(0, 1))
+            ap_m = np.mean(precision[:, :, :, 2], axis=(0, 1))
+            ap_l = np.mean(precision[:, :, :, 3], axis=(0, 1))
+
+            # Indicate metrics with no instances as missing
+            ap = np.ma.filled(ap, -1)
+            ap50 = np.ma.filled(ap50, -1)
+            ap75 = np.ma.filled(ap75, -1)
+            ap_s = np.ma.filled(ap_s, -1)
+            ap_m = np.ma.filled(ap_m, -1)
+            ap_l = np.ma.filled(ap_l, -1)
+
+            metrics.update(
+                {
+                    name: {
+                        "AP": ap[i],
+                        "AP50": ap50[i],
+                        "AP75": ap75[i],
+                        "APs": ap_s[i],
+                        "APm": ap_m[i],
+                        "APl": ap_l[i],
+                    }
+                    for i, name in enumerate(self.category_names)
+                }
+            )
 
         return metrics

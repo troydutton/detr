@@ -24,7 +24,7 @@ class Evaluator(ABC):
         pass
 
     @abstractmethod
-    def compute(self) -> Dict[str, float]:
+    def compute(self) -> Dict[str, Dict[str, float]]:
         """
         Compute and return the evaluation metrics.
 
