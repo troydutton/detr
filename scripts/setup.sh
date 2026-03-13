@@ -1,7 +1,7 @@
 # !/bin/bash
 
 # Fail fast
-set -eou pipefail
+set -eo pipefail
 
 ENV_NAME="detr"
 
