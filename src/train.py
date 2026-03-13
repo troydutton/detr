@@ -121,6 +121,8 @@ def main(args: DictConfig) -> None:
         **args["train"],
     )
 
+    accelerator.end_training()
+
 
 if __name__ == "__main__":
     main()
