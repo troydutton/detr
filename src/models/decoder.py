@@ -154,22 +154,18 @@ class TransformerDecoder(Module):
         if self.training and self.denoise_queries:
             queries = self._generate_denoising_queries(queries, targets)
 
-        # Maintain an undetached copy for multi-layer refinement
-        reference_undetach = queries.reference
-
         # Iteratively decode the object queries
         boxes, logits = [], []
         for layer in self.layers:
             queries: Queries = layer(queries, features)
 
-            # Update the reference boxes, using the undetached references for prediction
+            # Update the reference boxes
             offsets = self.bbox_head(query_embed := self.norm(queries.embed))
-            layer_boxes = self._update_references(reference_undetach, offsets)
+            layer_boxes = self._update_references(queries.reference, offsets)
 
             # Refine the reference boxes and positional embeddings for the next layer
             if self.refine_boxes:
-                reference_undetach = self._update_references(queries.reference, offsets)
-                queries.reference = reference_undetach.detach()
+                queries.reference = layer_boxes.detach()
                 queries.pos = self.pos_projection(build_pos_embed(queries.reference, 2 * self.embed_dim))
 
             # Predict class logits
@@ -406,7 +402,7 @@ class TransformerDecoder(Module):
         """
 
         xy = references[..., :2] + (offsets[..., :2] * references[..., 2:])
-        wh = references[..., 2:] * offsets[..., 2:].exp()
+        wh = references[..., 2:] * offsets[..., 2:].clamp(-5.0, 5.0).exp()
 
         return torch.cat([xy, wh], dim=-1).clamp(0, 1)
 
