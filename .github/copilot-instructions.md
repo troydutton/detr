@@ -6,11 +6,11 @@ This project implements the DETR (DEtection TRansformer) model for object detect
 All source code is located in the `src/` directory. The main entry point for training is `train.py`, the main entry point for evaluation is `eval.py`, and the primary training and evaluation loop is located in `engine.py`.
 
 The primary modules are:
- - `models/`: Contains model definitions (`detr.py`), backbone architectures (`backbone.py`), transformer implementations (`transformer.py`, `encoder.py`, `decoder.py`), and useful utilities (`layers.py`, `deformable_attention.py`, `positional_embedding.py`).
- - `datasets/`: Data loading (`coco_dataset.py`) and transformation utilities (`transforms.py`).
- - `criterion/`: Loss functions (`criterion.py`) and matching algorithms (`matcher.py`).
+ - `models/`: Contains model definitions (`detr.py`), backbone architectures (`backbone.py`), transformer implementations (`encoder.py`, `decoder.py`), and useful utilities (`layers.py`, `deformable_attention.py`, `positional_embedding.py`).
+ - `data/`: Data loading (`coco_dataset.py`) and transformation utilities (`transforms.py`).
+ - `criterion/`: Loss functions (`criterion.py`) and matching algorithms (`hungarian_matcher.py`).
  - `evaluators/`: Evaluation metrics (`coco_evaluator.py`).
- - `utils/`: Utility functions for parameter group initialization (`optimizer.py`), learning rate schedulers (`lr.py`), visualization (`visualize.py`), and miscellaneous helpers (`misc.py`).
+ - `utils/`: Utility functions for bounding box manipulation (`boxes.py`), parameter group initialization (`optimizer.py`), learning rate schedulers (`lr.py`), visualization (`visualize.py`), and miscellaneous helpers (`misc.py`).
 
 Configuration files (`configs/`) use the Hydra format, and unit tests (`tests/`) use the pytest framework.
 
