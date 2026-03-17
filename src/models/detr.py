@@ -36,6 +36,7 @@ class DETR(nn.Module):
 
     Args:
         pretrained_weights: Path to a pretrained weights file.
+        categories: Category names used for predictions, optional.
         kwargs: Arguments to construct the backbone and transformer.
             See `models.backbone.Backbone`, `models.encoder.TransformerEncoder`, and `models.decoder.TransformerDecoder`.
     """
