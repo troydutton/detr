@@ -24,7 +24,7 @@ encoder:
   num_layers: 1
   embed_dim: ${model.embed_dim}
   layer:
-    _target_: models.encoder.DeformableEncoderLayer
+    _target_: models.layers.encoder.DeformableEncoderLayer
     embed_dim: ${model.embed_dim}
     ffn_dim: ${model.ffn_dim}
     num_heads: ${model.num_deformable_heads}
@@ -45,7 +45,7 @@ decoder:
   neg_noise_scale: ${model.neg_noise_scale}
   label_noise_prob: ${model.label_noise_prob}
   layer:
-    _target_: models.decoder.DeformableDecoderLayer
+    _target_: models.layers.decoder.DeformableDecoderLayer
     embed_dim: ${model.embed_dim}
     ffn_dim: ${model.ffn_dim}
     num_heads: ${model.num_heads}

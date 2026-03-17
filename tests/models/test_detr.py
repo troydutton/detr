@@ -29,7 +29,7 @@ def test_detr_forward() -> None:
             "num_layers": 1,
             "embed_dim": embed_dim,
             "layer": {
-                "_target_": "models.encoder.EncoderLayer",
+                "_target_": "models.layers.encoder.EncoderLayer",
                 "embed_dim": embed_dim,
                 "ffn_dim": 128,
                 "num_heads": 4,
@@ -43,7 +43,7 @@ def test_detr_forward() -> None:
             "num_classes": num_classes,
             "num_groups": num_groups,
             "layer": {
-                "_target_": "models.decoder.DecoderLayer",
+                "_target_": "models.layers.decoder.DecoderLayer",
                 "embed_dim": embed_dim,
                 "ffn_dim": 128,
                 "num_heads": 4,
@@ -101,7 +101,7 @@ def test_detr_predict() -> None:
             "num_layers": 1,
             "embed_dim": embed_dim,
             "layer": {
-                "_target_": "models.encoder.EncoderLayer",
+                "_target_": "models.layers.encoder.EncoderLayer",
                 "embed_dim": embed_dim,
                 "ffn_dim": 128,
                 "num_heads": 4,
@@ -115,7 +115,7 @@ def test_detr_predict() -> None:
             "num_classes": num_classes,
             "num_groups": num_groups,
             "layer": {
-                "_target_": "models.decoder.DecoderLayer",
+                "_target_": "models.layers.decoder.DecoderLayer",
                 "embed_dim": embed_dim,
                 "ffn_dim": 128,
                 "num_heads": 4,

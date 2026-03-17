@@ -18,7 +18,7 @@ encoder:
   num_layers: 6
   embed_dim: ${model.embed_dim}
   layer:
-    _target_: models.encoder.EncoderLayer
+    _target_: models.layers.encoder.EncoderLayer
     embed_dim: ${model.embed_dim}
     ffn_dim: ${model.ffn_dim}
     num_heads: ${model.num_heads}
@@ -29,7 +29,7 @@ decoder:
   num_queries: ${model.num_queries} 
   embed_dim: ${model.embed_dim}
   layer:
-    _target_: models.decoder.DecoderLayer
+    _target_: models.layers.decoder.DecoderLayer
     embed_dim: ${model.embed_dim}
     ffn_dim: ${model.ffn_dim}
     num_heads: ${model.num_heads}
