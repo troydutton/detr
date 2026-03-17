@@ -3,6 +3,7 @@ pretrained_weights: Null
 embed_dim: 256
 ffn_dim: 2048
 num_heads: 8
+num_deformable_heads: 8
 num_points: 4
 num_levels: 4
 dropout: 0.1
@@ -26,7 +27,7 @@ encoder:
     _target_: models.encoder.DeformableEncoderLayer
     embed_dim: ${model.embed_dim}
     ffn_dim: ${model.ffn_dim}
-    num_heads: ${model.num_heads}
+    num_heads: ${model.num_deformable_heads}
     num_points: ${model.num_points}
     num_levels: ${model.num_levels}
     dropout: ${model.dropout}
@@ -48,6 +49,7 @@ decoder:
     embed_dim: ${model.embed_dim}
     ffn_dim: ${model.ffn_dim}
     num_heads: ${model.num_heads}
+    num_deformable_heads: ${model.num_deformable_heads}
     num_points: ${model.num_points}
     num_levels: ${model.num_levels}
     dropout: ${model.dropout}

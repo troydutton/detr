@@ -551,6 +551,7 @@ class DeformableDecoderLayer(Module):
         embed_dim: Embedding dimension.
         ffn_dim: Feedforward network dimension.
         num_heads: Number of attention heads.
+        num_deformable_heads: Number of deformable attention heads.
         num_points: Number of sampling points.
         num_levels: Number of feature levels.
         dropout: Dropout rate, optional.
@@ -561,6 +562,7 @@ class DeformableDecoderLayer(Module):
         embed_dim: int,
         ffn_dim: int,
         num_heads: int,
+        num_deformable_heads: int,
         num_points: int,
         num_levels: int,
         dropout: float = 0.0,
@@ -576,7 +578,7 @@ class DeformableDecoderLayer(Module):
 
         # Deformable cross-attention
         self.norm2 = LayerNorm(embed_dim)
-        self.cross_attention = MultiHeadDeformableAttention(embed_dim, num_heads, num_levels, num_points)
+        self.cross_attention = MultiHeadDeformableAttention(embed_dim, num_deformable_heads, num_levels, num_points)
         self.dropout2 = Dropout(dropout)
 
         # Feedforward Network
