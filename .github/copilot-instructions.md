@@ -82,6 +82,7 @@ Use descriptive yet succinct variable names that provide immediate semantic cont
 This project is based on the following key papers, use them as references if you have questions about the model architecture, training paradigm:
 
 - [DETR](https://ar5iv.labs.arxiv.org/html/2005.12872): Introduces the transformer-based object detection paradigm.
-- [Deformable DETR](https://ar5iv.labs.arxiv.org/html/2010.04159): Introduces deformable attention.
+- [Deformable DETR](https://ar5iv.labs.arxiv.org/html/2010.04159): Introduces deformable attention, two stage, and box refinement.
 - [Group DETR](https://ar5iv.labs.arxiv.org/html/2207.13085): Introduces multiple query groups.
 - [DINO DETR](https://ar5iv.labs.arxiv.org/html/2203.03605): Introduces a contrastive denoising objective.
+- [LW-DETR](https://ar5iv.labs.arxiv.org/html/2406.03459): Introduces a lightweight architecture.
