@@ -21,7 +21,8 @@ class Criterion:
     Implements box and classification losses for object detection.
 
     Args:
-        loss_weights: Weights for different loss components.
+        loss_weights: Weights for loss components.
+        cost_weights: Weights for cost components, optional.
         alpha: Quality weighting parameter, optional.
         gamma: Focal loss gamma parameter, optional.
     """
@@ -29,14 +30,16 @@ class Criterion:
     def __init__(
         self,
         loss_weights: Dict[str, float],
+        cost_weights: Optional[Dict[str, float]] = None,
         alpha: float = 0.25,
         gamma: float = 2.0,
     ) -> None:
         self.loss_weights = loss_weights
+        self.cost_weights = cost_weights if cost_weights is not None else loss_weights
         self.alpha = alpha
         self.gamma = gamma
 
-        self.matcher = HungarianMatcher(cost_weights=loss_weights, alpha=alpha, gamma=gamma)
+        self.matcher = HungarianMatcher(cost_weights=self.cost_weights, alpha=alpha, gamma=gamma)
 
     def __call__(
         self,
