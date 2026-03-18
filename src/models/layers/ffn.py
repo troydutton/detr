@@ -1,4 +1,5 @@
 from math import sqrt
+from typing import Type
 
 import torch
 from torch import Tensor, nn
@@ -26,7 +27,7 @@ class FFN(nn.Module):
         output_dim: int,
         num_layers: int,
         dropout: float = 0.0,
-        activation: nn.Module = nn.ReLU,
+        activation: Type[nn.Module] = nn.ReLU,
     ) -> None:
         super().__init__()
 
