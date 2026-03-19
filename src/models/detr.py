@@ -44,9 +44,17 @@ class DETR(nn.Module):
     def __init__(self, pretrained_weights: str = None, categories: List[str] = None, **kwargs) -> None:
         super().__init__()
 
-        # Build the backbone, transformer encoder, and transformer decoder
+        # Build the backbone
+        kwargs["backbone"]["enable_level_pos"] = kwargs["encoder"]["num_layers"] > 0
         self.backbone = Backbone(**kwargs["backbone"])
+
+        # Build the transformer encoder and decoder
+        if "num_levels" in kwargs["encoder"]["layer"]:
+            kwargs["encoder"]["layer"]["num_levels"] = self.backbone.num_output_levels
         self.encoder = TransformerEncoder(**kwargs["encoder"])
+
+        if "num_levels" in kwargs["decoder"]["layer"]:
+            kwargs["decoder"]["layer"]["num_levels"] = self.backbone.num_output_levels
         self.decoder = TransformerDecoder(**kwargs["decoder"])
 
         # Label to category name mapping for use in predictions

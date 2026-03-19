@@ -25,9 +25,7 @@ def build_parameter_groups(
         param_groups: Parameter groups for the optimizer.
     """
 
-    logging.info(
-        f"Building parameter groups with {lr=:.1e}, {lr_backbone=:.1e}{'' if lr_projection is None else f', {lr_projection=:.1e}'}."
-    )
+    logging.info(f"Building parameter groups with {lr=:.1e}, {lr_backbone=:.1e}{'' if lr_projection is None else f', {lr_projection=:.1e}'}.")  # fmt: skip
 
     # Separate out backbone parameters
     params, backbone_params, projection_params = [], [], []
@@ -36,7 +34,7 @@ def build_parameter_groups(
         if param.requires_grad == False:
             continue
 
-        if "backbone" in name and "projection" not in name:
+        if "backbone" in name and not ("projection" in name or "projector" in name):
             backbone_params.append(param)
             num_backbone += param.numel()
         elif any(projection_layer in name for projection_layer in PROJECTION_LAYERS) and lr_projection is not None:

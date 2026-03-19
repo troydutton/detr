@@ -9,6 +9,7 @@ from timm.models import FeatureInfo
 from torch import Tensor
 
 from models.positional_embedding import build_pos_embed
+from models.projector import Projector
 from utils.misc import take_annotation_from
 
 logger = logging.getLogger("detr")
@@ -28,18 +29,35 @@ class Backbone(nn.Module):
     Args:
         name: Name of the backbone to load from timm.
         embed_dim: Dimension of the output embeddings.
+        num_levels: Number of feature levels to extract from the backbone, optional.
         pretrained: Whether to load pretrained weights, optional.
+        **kwargs: Arguments to construct the projector. See `models.projector.Projector`.
     """
 
-    def __init__(self, name: str, embed_dim: int, num_levels: int = 1, *, pretrained: bool = True) -> None:
+    def __init__(
+        self,
+        name: str,
+        embed_dim: int,
+        num_levels: int = 1,
+        *,
+        downsampled_feature: bool = False,
+        enable_projector: bool = False,
+        enable_level_pos: bool = False,
+        pretrained: bool = True,
+        **kwargs,
+    ) -> None:
         super().__init__()
+
+        assert not (enable_projector and downsampled_feature), "Projector and downsampled feature cannot be enabled at the same time."
 
         self.embed_dim = embed_dim
         self.num_levels = num_levels
+        self.downsampled_feature = downsampled_feature
+        self.enable_projector = enable_projector
 
-        # When using 4 or more levels, we take one less level from the backbone
-        # because we use an extra projection on the final feature map
-        out_indices = list(range(-(num_levels - 1 if num_levels > 3 else num_levels), 0))
+        # Take the last num_levels features from the backbone, taking into account whether
+        # we will add an extra downsampled feature from the final backbone feature map
+        out_indices = list(range(-(num_levels - 1 if downsampled_feature else num_levels), 0))
 
         # Build the backbone in feature-only mode
         self.backbone: BackboneType = timm.create_model(
@@ -47,27 +65,27 @@ class Backbone(nn.Module):
             features_only=True,
             out_indices=out_indices,
             pretrained=pretrained,
-        )
+        ).to(memory_format=torch.channels_last)
+        feature_channels = [self.backbone.feature_info[i]["num_chs"] for i in out_indices]
+        feature_strides = [self.backbone.feature_info[i]["reduction"] for i in out_indices]
 
         # Create projections from each backbone output to the desired embedding dimension
         self.projections = nn.ModuleList()
-
-        for i in out_indices:
-            in_channels = self.backbone.feature_info[i]["num_chs"]
+        for in_channels in feature_channels:
             self.projections.append(nn.Conv2d(in_channels, embed_dim, kernel_size=1))
-
-        if num_levels > 3:
-            in_channels = self.backbone.feature_info[-1]["num_chs"]
+        if downsampled_feature:
             self.projections.append(nn.Conv2d(in_channels, embed_dim, kernel_size=3, stride=2, padding=1))
+        self.projections.to(memory_format=torch.channels_last)
+
+        # Initialize the multi-scale projector if requested
+        if enable_projector:
+            self.projector: Projector = Projector(in_strides=feature_strides, **kwargs["projector"]).to(memory_format=torch.channels_last)
 
         # Per-level positional embeddings
-        self.level_pos = nn.Embedding(num_levels, embed_dim)
+        self.num_output_levels = self.projector.num_output_levels if enable_projector else num_levels
+        self.level_pos = nn.Embedding(self.num_output_levels, embed_dim) if enable_level_pos else None
 
         self._initialize_weights()
-
-        # Optimize memory format to align with DDP bucket views
-        self.backbone.to(memory_format=torch.channels_last)
-        self.projections.to(memory_format=torch.channels_last)
 
     def forward(self, images: Tensor) -> Features:
         """
@@ -83,29 +101,32 @@ class Backbone(nn.Module):
             - `dimensions`: Width and height of each feature level with shape (num_levels, 2).
         """
 
-        # Get batch information
-        batch_size, _, _, _ = images.shape
-        device = images.device
-
-        # Extract features
+        # Extract backbone features
         backbone_features = self.backbone(images)  # List of features with shape (batch_size, channels, feature_height, feature_width)
 
-        # In multi-scale, an additional downsampled feature is created from the final backbone feature.
-        if self.num_levels > 3:
+        # Optionally, create an additional downsampled feature from the final backbone feature.
+        if self.downsampled_feature:
             backbone_features.append(backbone_features[-1])
 
-        # Build multi-level features for the transformer encoder
+        # Project all features to the desired embedding dimension
+        features: List[Tensor] = [projection(feature) for projection, feature in zip(self.projections, backbone_features)]
+
+        if self.enable_projector:
+            features = self.projector(features)
+
+        return self._build_features(features)
+
+    def _build_features(self, features: List[Tensor]) -> Features:
+        # Build multi-level features
         all_features, all_pos, all_references, all_levels, dimensions = [], [], [], [], []
 
-        for level, (features, projection) in enumerate(zip(backbone_features, self.projections)):
-            level_pos: Tensor = self.level_pos(torch.tensor(level, device=device))
-
-            # Project into the desired embedding dimension
-            features: Tensor = projection(features)
+        for level, feature in enumerate(features):
+            # Get feature information
+            batch_size, _, height, width = feature.shape
+            device = feature.device
 
             # Flatten the spatial dimension
-            _, _, height, width = features.shape
-            features = features.flatten(2).transpose(1, 2)
+            feature = feature.flatten(2).transpose(1, 2)
 
             # Build reference points (center of each pixel normalized to [0, 1])
             x = torch.linspace(0.5, width - 0.5, width, device=device) / width
@@ -113,8 +134,12 @@ class Backbone(nn.Module):
             feature_reference = torch.stack(torch.meshgrid(x, y, indexing="xy"), dim=-1)
             feature_reference = feature_reference.reshape(1, width * height, 2)
 
-            # Build positional embeddings for this level, adding the learnable level embedding
-            feature_pos = build_pos_embed(feature_reference, self.embed_dim) + level_pos.view(1, 1, self.embed_dim)
+            # Build positional embeddings for this level
+            feature_pos = build_pos_embed(feature_reference, self.embed_dim)
+
+            if self.level_pos is not None:
+                level_pos: Tensor = self.level_pos(torch.tensor(level, device=device))
+                feature_pos = feature_pos + level_pos.view(1, 1, self.embed_dim)
 
             # Repeat positional information across the batch (batch_size, height * width, -1)
             feature_reference = feature_reference.repeat(batch_size, 1, 1)
@@ -123,7 +148,7 @@ class Backbone(nn.Module):
             # Keep track of the level each feature came from
             levels = torch.full((width * height,), level, device=device)
 
-            all_features.append(features)
+            all_features.append(feature)
             all_pos.append(feature_pos)
             all_references.append(feature_reference)
             all_levels.append(levels)
