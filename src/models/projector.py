@@ -262,9 +262,9 @@ class Bottleneck(nn.Module):
 
         features = self.conv2(features)
         features = self.norm2(features)
-        features = self.act2(features + residual) if self.shortcut else features
+        features = self.act2(features)
 
-        return features
+        return features + residual if self.shortcut else features
 
     @take_annotation_from(forward)
     def __call__(self, *args, **kwargs):
