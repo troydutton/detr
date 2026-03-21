@@ -111,7 +111,7 @@ def test_coco_dataset_transforms(coco_path: Path) -> None:
     resolution = 200
 
     # Create transformation pipeline
-    transforms = make_transformations("val", resolution=resolution, square_resize=True)
+    transforms = make_transformations("val", resolution=resolution)
 
     dataset = CocoDataset(str(coco_path), split, transforms=transforms)
 

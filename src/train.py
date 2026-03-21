@@ -1,4 +1,5 @@
 import logging
+from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Union
 
@@ -52,12 +53,14 @@ def main(args: DictConfig) -> None:
 
     # Create dataloaders
     batch_size, num_workers = args["train"]["batch_size"], args["train"]["num_workers"]
+    resolutions = args["transforms"]["train"]["resolution"]
+
     train_data = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        collate_fn=collate_fn,
+        collate_fn=partial(collate_fn, resolutions=resolutions),
         pin_memory=True,
     )
     val_data = DataLoader(

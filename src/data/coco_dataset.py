@@ -1,9 +1,12 @@
 import logging
+import random
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 
 import PIL.Image
 import torch
+import torch.nn.functional as F
 from pycocotools.coco import COCO
 from torch import Tensor
 from torch.utils.data import Dataset
@@ -162,8 +165,18 @@ class CocoDataset(Dataset):
         return category_names
 
 
-def collate_fn(batch: List[Tuple[Image, Target]]) -> Tuple[Tensor, List[Target]]:
+def collate_fn(batch: List[Tuple[Image, Target]], resolutions: Union[int, List[int]] = None) -> Tuple[Tensor, List[Target]]:
     # Unzip the batch
     images, targets = zip(*batch)
 
-    return torch.stack(images), list(targets)
+    images = torch.stack(images)
+    targets = list(targets)
+
+    # In multi-resolution training we randomly resize images at the batch level
+    if isinstance(resolutions, Iterable):
+        resolution = random.choice(resolutions)
+        images = F.interpolate(images, size=(resolution, resolution), mode="bilinear")
+        for target in targets:
+            target["size"] = torch.tensor([resolution, resolution], dtype=torch.int64)
+
+    return images, targets

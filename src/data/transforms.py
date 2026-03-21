@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, List, Protocol, Sequence, Tuple, Union
 
 import torch
@@ -122,9 +123,8 @@ class RandomErasingBoxAware:
 
 def make_transformations(
     split: str,
-    resolution: int,
+    resolution: Union[int, List[int]],
     *,
-    square_resize: bool = True,
     normalize: bool = True,
 ) -> Transformation:
     """
@@ -133,7 +133,6 @@ def make_transformations(
     Args:
         split: Which split to build transforms for. ("train", "val", or "test")
         resolution: Base image resolution used to compute resize sizes.
-        square_resize: Whether to use square resizing, optional.
         normalize: Whether to normalize the image, optional.
 
     Returns:
@@ -142,11 +141,11 @@ def make_transformations(
 
     logging.info(f"Building '{split}' transformations with {resolution=}.")
 
-    if square_resize:
-        resize_transform = T.Resize(size=(resolution, resolution))
-    else:
-        resize_transform = T.Resize(size=resolution, max_size=1333)
+    # When provided multiple resolutions we resize to the largest resolution in the transformations,
+    # and randomly resize images at the batch level to avoid the need for padding
+    resolution = max(resolution) if isinstance(resolution, Iterable) else resolution
 
+    # Sometimes we want to skip normalizaition (i.e. for visualization)
     normalize_transform = T.Normalize(IMNET_MEAN, IMNET_STD) if normalize else T.Identity()
 
     def _get_labels(sample: Tuple[Image.Image, Target]) -> List[Union[Tensor, BoundingBoxes]]:
@@ -157,7 +156,7 @@ def make_transformations(
             [
                 T.ToImage(),
                 T.RandomIoUCrop(),
-                resize_transform,
+                T.Resize(size=(resolution, resolution)),
                 T.RandomHorizontalFlip(),
                 T.ToDtype(torch.float32, scale=True),
                 T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
@@ -172,7 +171,7 @@ def make_transformations(
         return T.Compose(
             [
                 T.ToImage(),
-                resize_transform,
+                T.Resize(size=(resolution, resolution)),
                 T.ToDtype(torch.float32, scale=True),
                 normalize_transform,
                 T.ClampBoundingBoxes(),

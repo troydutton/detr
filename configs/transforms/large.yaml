@@ -1,11 +1,9 @@
-resolution: 768
-
 train:
   _target_: data.make_transformations
   split: train
-  resolution: ${transforms.resolution}
+  resolution: [384, 576, 768, 960, 1152]
 
 val:
   _target_: data.make_transformations
   split: val 
-  resolution: ${transforms.resolution}
+  resolution: 768
