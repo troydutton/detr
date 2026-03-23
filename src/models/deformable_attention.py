@@ -80,10 +80,8 @@ class MultiHeadDeformableAttention(nn.Module):
         sampled_values = torch.cat(sampled_values, dim=-1)
 
         # Calculate attention weights (normalized over the points across all levels)
-        attention_weights = (
-            self.attention_weights(queries).view(batch_size, num_queries, self.num_heads, self.num_levels * self.num_points).float()
-        )
-        attention_weights = attention_weights.softmax(dim=-1)
+        attention_weights = self.attention_weights(queries).view(batch_size, num_queries, self.num_heads, self.num_levels * self.num_points)
+        attention_weights = attention_weights.float().softmax(dim=-1)
         attention_weights = attention_weights.transpose(1, 2)
 
         # Perform attention
@@ -93,7 +91,7 @@ class MultiHeadDeformableAttention(nn.Module):
         output = output.reshape(batch_size, embed_dim, num_queries).transpose(1, 2)
 
         # Output projection
-        output = self.output_proj(output.to(dtype))
+        output = self.output_proj(output).to(dtype)
 
         return output
 
