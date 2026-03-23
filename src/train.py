@@ -1,5 +1,4 @@
 import logging
-from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Union
 
@@ -15,6 +14,7 @@ from torch.utils.data import DataLoader
 
 from criterion import Criterion
 from data import CocoDataset, collate_fn
+from data.transforms import DiscreteRandomResize
 from engine import train
 from evaluators import CocoEvaluator
 from models import DETR
@@ -50,17 +50,17 @@ def main(args: DictConfig) -> None:
     # Create datasets (config/dataset/*.yaml)
     train_dataset: CocoDataset = instantiate(args["dataset"]["train"])
     val_dataset: CocoDataset = instantiate(args["dataset"]["val"])
+    image_resizer = DiscreteRandomResize(args["transforms"]["train"]["resolution"])
 
     # Create dataloaders
     batch_size, num_workers = args["train"]["batch_size"], args["train"]["num_workers"]
-    resolutions = args["transforms"]["train"]["resolution"]
 
     train_data = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        collate_fn=partial(collate_fn, resolutions=resolutions),
+        collate_fn=collate_fn,
         pin_memory=True,
     )
     val_data = DataLoader(
@@ -122,6 +122,7 @@ def main(args: DictConfig) -> None:
         train_data=train_data,
         val_data=val_data,
         accelerator=accelerator,
+        image_resizer=image_resizer,
         **args["train"],
     )
 

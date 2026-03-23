@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+import random
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, List, Protocol, Sequence, Tuple, Union
 
 import torch
+import torch.nn.functional as F
 import torchvision.transforms.v2 as T
 from PIL import Image
 from torch import Tensor
@@ -119,6 +121,36 @@ class RandomErasingBoxAware:
         annotations["boxes"] = wrap(boxes, like=annotations["boxes"])
 
         return image, annotations
+
+
+class DiscreteRandomResize:
+    """
+    Randomly resizes a batch of images to one of the given resolutions.
+
+    Args:
+        resolutions: Base image resolution or list of resolutions to randomly choose from.
+    """
+
+    def __init__(self, resolutions: Union[int, List[int]]) -> None:
+        self.resolutions = resolutions if isinstance(resolutions, Iterable) else [resolutions]
+
+    def __call__(self, images: Tensor, targets: List[Target]) -> Tuple[Tensor, List[Target]]:
+        # Randomly choose a resolution to resize to
+        resolution = random.choice(self.resolutions)
+
+        # No-op if the images are already at the target resolution
+        _, _, height, width = images.shape
+
+        if height == resolution and width == resolution:
+            return images, targets
+
+        # Resize the images and update the target sizes accordingly
+        images = F.interpolate(images, size=(resolution, resolution), mode="bilinear")
+        device = images.device
+        for target in targets:
+            target["size"] = torch.tensor([resolution, resolution], dtype=torch.int64, device=device)
+
+        return images, targets
 
 
 def make_transformations(

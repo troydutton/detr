@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Dict, Tuple, Union
+from typing import TYPE_CHECKING, Dict, Optional, Tuple, Union
 
 import torch
 import wandb
@@ -12,6 +14,9 @@ from tqdm import tqdm
 from criterion import Criterion
 from evaluators import Evaluator
 from models import DETR
+
+if TYPE_CHECKING:
+    from data.transforms import Transformation
 
 
 def train(
@@ -28,6 +33,7 @@ def train(
     start_epoch: int = 0,
     save_period: int = 1,
     max_grad_norm: float = 0.1,
+    image_resizer: Optional[Transformation] = None,
 ) -> None:
     """
     Train and evaluate a model for a number of epochs.
@@ -46,6 +52,7 @@ def train(
         start_epoch: Epoch to start training from, optional.
         save_period: Period (in epochs) to save the model weights, optional.
         max_grad_norm: Maximum gradient norm for clipping, optional.
+        image_resizer: Transformation to resize images at the batch level, optional.
     """
 
     for epoch in range(start_epoch, num_epochs):
@@ -59,6 +66,7 @@ def train(
             epoch=epoch,
             accelerator=accelerator,
             max_grad_norm=max_grad_norm,
+            image_resizer=image_resizer,
         )
 
         # Evaluate the model
@@ -94,6 +102,7 @@ def train_one_epoch(
     accelerator: Accelerator,
     *,
     max_grad_norm: float = 0.1,
+    image_resizer: Optional[Transformation] = None,
 ) -> None:
     """
     Train a model for a single epoch.
@@ -107,6 +116,7 @@ def train_one_epoch(
         epoch: Current epoch.
         accelerator: Accelerator object.
         max_grad_norm: Maximum gradient norm for clipping, optional.
+        image_resizer: Transformation to resize images at the batch level, optional.
     """
 
     # Set the model to training mode
@@ -114,6 +124,10 @@ def train_one_epoch(
 
     data = tqdm(data, desc=f"Training (Epoch {epoch})", dynamic_ncols=True, disable=not accelerator.is_main_process)
     for images, targets in data:
+        # Batch resize
+        if image_resizer is not None:
+            images, targets = image_resizer(images, targets)
+
         # Zero the gradients
         optimizer.zero_grad(set_to_none=True)
 
