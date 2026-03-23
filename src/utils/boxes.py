@@ -2,6 +2,8 @@ import torch
 from torch import Tensor
 from torchvision.ops.boxes import box_area, box_convert
 
+EPSILON = 1e-4
+
 
 def pairwise_box_iou(boxes1: Tensor, boxes2: Tensor, box_format: str = "xyxy") -> Tensor:
     """
@@ -83,13 +85,14 @@ def box_intersection(boxes1: Tensor, boxes2: Tensor, box_format: str = "xyxy") -
     Computes the intersection between two sets of boxes, stolen from `torchvision.ops.boxes`.
 
     Args:
-        boxes1: First set of boxes, with shape (N, 4).
-        boxes2: Second set of boxes, with shape (M, 4).
+        boxes1: Bounding boxes with shape (N, 4).
+        boxes2: Bounding boxes with shape (M, 4).
         box_format: The format of the bounding boxes ("xyxy", "cxcywh", etc.).
 
     Returns:
         intersection_area: The intersection between the boxes, with shape (N, M)
     """
+
     boxes1 = box_convert(boxes1, box_format, "xyxy")
     boxes2 = box_convert(boxes2, box_format, "xyxy")
 
@@ -100,3 +103,31 @@ def box_intersection(boxes1: Tensor, boxes2: Tensor, box_format: str = "xyxy") -
     intersection_area = width_height[:, :, 0] * width_height[:, :, 1]  # (N,M)
 
     return intersection_area
+
+
+def clamp_boxes(
+    boxes: Tensor,
+    min: float = EPSILON,
+    max: float = 1.0 - EPSILON,
+    box_format: str = "cxcywh",
+) -> Tensor:
+    """
+    Clamp boxes to a specified range, ensuring they remain valid and non-degenerate.
+
+    Args:
+        boxes: Bounding boxes with shape (N, 4).
+        min: Minimum value for clamping, optional.
+        max: Maximum value for clamping, optional.
+        box_format: Format of the boxes ("xyxy", "cxcywh", ...), optional.
+
+    Returns:
+        boxes: Clamped bounding boxes with shape (N, 4).
+    """
+
+    # We perform clamping in cxcywh to ensure that the center point
+    # lies within the image and the box area is non-zero
+    boxes = box_convert(boxes, box_format, "cxcywh")
+    boxes = boxes.clamp(min=min, max=max)
+    boxes = box_convert(boxes, "cxcywh", box_format)
+
+    return boxes

@@ -12,6 +12,7 @@ from data.coco_dataset import Target
 from models.backbone import Features
 from models.layers.ffn import FFN
 from models.positional_embedding import build_pos_embed
+from utils.boxes import clamp_boxes
 from utils.misc import take_annotation_from
 
 
@@ -46,7 +47,6 @@ class TransformerDecoder(Module):
         denoise_queries: Whether to use denoising queries during training, optional.
         kwargs: Arguments to construct the decoder layers.
             See `models.layers.decoder.DecoderLayer` or `models.layers.decoder.DeformableDecoderLayer`.
-
     """
 
     def __init__(
@@ -216,9 +216,10 @@ class TransformerDecoder(Module):
         query_embed = self.queries.weight[: num_groups * self.num_queries].unsqueeze(0)
 
         # Generate reference boxes from the query embeddings
-        feature_xy = torch.sigmoid(self.reference_points(query_embed)).clamp(0, 1)
+        feature_xy = torch.sigmoid(self.reference_points(query_embed))
         feature_wh = torch.full_like(feature_xy, 0.1)
         query_ref = torch.cat([feature_xy, feature_wh], dim=-1)
+        query_ref = clamp_boxes(query_ref, box_format="cxcywh")
 
         # Generate positional embeddings from reference boxes
         query_pos: Tensor = self.pos_projection(build_pos_embed(query_ref, 2 * self.embed_dim))
@@ -355,7 +356,7 @@ class TransformerDecoder(Module):
 
             # The model expects boxes in cxcywh format
             boxes = box_convert(boxes, in_fmt="xyxy", out_fmt="cxcywh")
-            boxes = boxes.reshape(num_queries, 4)
+            boxes = clamp_boxes(boxes.reshape(num_queries, 4), box_format="cxcywh")
 
             # Randomly perturb labels to make the denoising task more challenging
             label_noise = torch.rand_like(labels, dtype=torch.float32) < self.label_noise_prob
@@ -401,9 +402,9 @@ class TransformerDecoder(Module):
         """
 
         xy = references[..., :2] + (offsets[..., :2] * references[..., 2:])
-        wh = references[..., 2:] * offsets[..., 2:].clamp(-5.0, 5.0).exp()
+        wh = references[..., 2:] * offsets[..., 2:].clamp(-3.0, 3.0).exp()
 
-        return torch.cat([xy, wh], dim=-1).clamp(0, 1)
+        return clamp_boxes(torch.cat([xy, wh], dim=-1), box_format="cxcywh")
 
     @torch.no_grad()
     def _initialize_weights(self) -> None:

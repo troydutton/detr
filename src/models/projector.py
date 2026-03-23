@@ -280,7 +280,7 @@ class LayerNorm2d(nn.Module):
         eps: A value added to the denominator for numerical stability, optional.
     """
 
-    def __init__(self, in_channels: int, eps: float = 1e-6) -> None:
+    def __init__(self, in_channels: int, eps: float = 1e-4) -> None:
         super().__init__()
 
         self.in_channels = (in_channels,)
