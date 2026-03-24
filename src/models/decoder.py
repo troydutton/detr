@@ -323,7 +323,7 @@ class TransformerDecoder(Module):
         query_pos = torch.zeros(batch_size, self.num_denoise_queries, self.embed_dim, device=device)
         query_ref = torch.zeros(batch_size, self.num_denoise_queries, 4, device=device)
         padding_mask = torch.ones(batch_size, self.num_denoise_queries, dtype=torch.bool, device=device)
-        attention_mask = torch.ones(batch_size, self.num_denoise_queries, self.num_denoise_queries, dtype=torch.bool, device=device)
+        attention_mask = torch.zeros(batch_size, self.num_denoise_queries, self.num_denoise_queries, dtype=torch.bool, device=device)
 
         for i, (target, num_objects) in enumerate(zip(targets, objects_per_image)):
             boxes, labels = target["boxes"][:num_objects], target["labels"][:num_objects]
