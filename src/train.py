@@ -26,14 +26,14 @@ Args = Dict[str, Union[Any, "Args"]]
 
 @hydra.main(config_path="../configs", config_name="detr", version_base=None)
 def main(args: DictConfig) -> None:
+    # Resolve arguments
+    args: Args = OmegaConf.to_container(args, resolve=True, throw_on_missing=True)
+
     # Distributed setup
-    accelerator = Accelerator()
+    accelerator = Accelerator(gradient_accumulation_steps=args["train"]["grad_accum_steps"])
 
     if not accelerator.is_main_process:
         logging.getLogger().setLevel(logging.ERROR)
-
-    # Resolve arguments
-    args: Args = OmegaConf.to_container(args, resolve=True, throw_on_missing=True)
 
     # Reproducibility
     set_seed(args["train"]["random_seed"], device_specific=True)
@@ -111,6 +111,7 @@ def main(args: DictConfig) -> None:
     del args["train"]["batch_size"]
     del args["train"]["num_workers"]
     del args["train"]["random_seed"]
+    del args["train"]["grad_accum_steps"]
 
     # Start training
     train(

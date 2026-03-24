@@ -124,32 +124,36 @@ def train_one_epoch(
 
     data = tqdm(data, desc=f"Training (Epoch {epoch})", dynamic_ncols=True, disable=not accelerator.is_main_process)
     for images, targets in data:
-        # Batch resize
-        if image_resizer is not None:
-            images, targets = image_resizer(images, targets)
+        with accelerator.accumulate(model):
+            # Batch resize
+            if image_resizer is not None:
+                images, targets = image_resizer(images, targets)
 
-        # Zero the gradients
-        optimizer.zero_grad(set_to_none=True)
+            # Zero the gradients
+            optimizer.zero_grad(set_to_none=True)
 
-        # Forward pass
-        predictions = model(images, targets)
+            # Forward pass
+            predictions = model(images, targets)
 
-        # Calculate the loss
-        losses = criterion(predictions, targets, accelerator)
+            # Calculate the loss
+            losses = criterion(predictions, targets, accelerator)
 
-        # Backward pass & optimizer step
-        accelerator.backward(losses["overall"])
-        accelerator.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
-        optimizer.step()
+            # Backward pass & optimizer step
+            accelerator.backward(losses["overall"])
 
-        # Step the learning rate scheduler every update
-        scheduler.step()
-        losses = {k: torch.mean(accelerator.reduce(v.detach(), reduction="mean")).item() for k, v in losses.items()}
+            if accelerator.sync_gradients:
+                accelerator.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
+                losses = {k: torch.mean(accelerator.reduce(v.detach(), reduction="mean")).item() for k, v in losses.items()}
 
-        # Log the loss
-        if accelerator.is_main_process:
-            step_size = len(images) * accelerator.num_processes
-            wandb.log({"train": {"loss": losses}}, step=wandb.run.step + step_size)
+            optimizer.step()
+
+            # Step the learning rate scheduler every update
+            scheduler.step()
+
+            # Log the loss
+            if accelerator.is_main_process and accelerator.sync_gradients:
+                step_size = len(images) * accelerator.num_processes * accelerator.gradient_accumulation_steps
+                wandb.log({"train": {"loss": losses}}, step=wandb.run.step + step_size)
 
     accelerator.wait_for_everyone()
 
