@@ -122,7 +122,7 @@ def train_one_epoch(
     # Set the model to training mode
     model.train()
 
-    data = tqdm(data, desc=f"Training (Epoch {epoch})", dynamic_ncols=True, disable=not accelerator.is_main_process)
+    data = tqdm(data, desc=f"Training (Epoch {epoch + 1})", dynamic_ncols=True, disable=not accelerator.is_main_process)
     for images, targets in data:
         with accelerator.accumulate(model):
             # Batch resize
@@ -191,7 +191,7 @@ def evaluate(
     # Keep track of the running loss
     losses = {}
 
-    data = tqdm(data, desc=f"Validation (Epoch {epoch})", dynamic_ncols=True, disable=not accelerator.is_main_process)
+    data = tqdm(data, desc=f"Validation (Epoch {epoch + 1})", dynamic_ncols=True, disable=not accelerator.is_main_process)
     for images, targets in data:
         # Forward pass
         predictions = model(images)
