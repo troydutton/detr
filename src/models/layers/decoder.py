@@ -7,7 +7,7 @@ from torch import Tensor, nn
 from torch.nn import Dropout, LayerNorm, Module
 
 from models.backbone import Features
-from models.deformable_attention import MultiHeadDeformableAttention
+from models.layers.deformable_attention import MultiHeadDeformableAttention
 from models.layers.ffn import FFN
 from utils.misc import take_annotation_from
 

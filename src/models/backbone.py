@@ -8,7 +8,7 @@ import torch.nn as nn
 from timm.models import FeatureInfo
 from torch import Tensor
 
-from models.positional_embedding import build_pos_embed
+from models.layers.positional_embedding import build_pos_embed
 from models.projector import Projector
 from utils.misc import take_annotation_from
 

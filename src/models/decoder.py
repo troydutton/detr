@@ -11,7 +11,7 @@ from torchvision.ops.boxes import box_convert
 from data.coco_dataset import Target
 from models.backbone import Features
 from models.layers.ffn import FFN
-from models.positional_embedding import build_pos_embed
+from models.layers.positional_embedding import build_pos_embed
 from utils.boxes import clamp_boxes
 from utils.misc import take_annotation_from
 
