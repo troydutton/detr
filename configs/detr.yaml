@@ -6,6 +6,7 @@ defaults:
   - optimizer: detr 
   - scheduler: detr 
   - criterion: detr
+  - ema: constant 
   - _self_
 
 train:

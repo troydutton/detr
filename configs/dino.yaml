@@ -6,6 +6,7 @@ defaults:
   - optimizer: dino 
   - scheduler: dino
   - criterion: dino 
+  - ema: constant 
   - _self_
 
 train:

@@ -6,6 +6,7 @@ defaults:
   - optimizer: lwdetr
   - scheduler: lwdetr
   - criterion: lwdetr
+  - ema: constant 
   - _self_
 
 train:

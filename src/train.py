@@ -10,6 +10,7 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.optim.optimizer import Optimizer
+from torch.optim.swa_utils import AveragedModel
 from torch.utils.data import DataLoader
 
 from criterion import Criterion
@@ -18,6 +19,7 @@ from data.transforms import DiscreteRandomResize
 from engine import train
 from evaluators import CocoEvaluator
 from models import DETR
+from utils.checkpoint import load_checkpoint
 from utils.lr import prepare_scheduler_arguments
 from utils.optimizer import build_parameter_groups
 
@@ -77,6 +79,9 @@ def main(args: DictConfig) -> None:
     args["model"]["decoder"]["num_classes"] = train_dataset.num_classes
     model = DETR(**args["model"])
 
+    # Create EMA model
+    ema_model = AveragedModel(model, multi_avg_fn=instantiate(args["ema"]))
+
     # Save the arguments to the output directory
     if accelerator.is_main_process:
         OmegaConf.save(config=args, f=output_dir / "config.yaml")
@@ -106,7 +111,9 @@ def main(args: DictConfig) -> None:
 
     if checkpoint is not None:
         args["train"]["start_epoch"] = int(Path(checkpoint).name)
-        accelerator.load_state(checkpoint)
+        load_checkpoint(accelerator, checkpoint, ema_model=ema_model)
+
+    ema_model = ema_model.to(accelerator.device)
 
     del args["train"]["batch_size"]
     del args["train"]["num_workers"]
@@ -116,6 +123,7 @@ def main(args: DictConfig) -> None:
     # Start training
     train(
         model=model,
+        ema_model=ema_model,
         optimizer=optimizer,
         scheduler=scheduler,
         criterion=criterion,

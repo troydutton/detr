@@ -15,6 +15,8 @@ from models.decoder import TransformerDecoder
 from models.encoder import TransformerEncoder
 from utils.misc import take_annotation_from
 
+VALID_WEIGHT_FILES = ["ema_model.safetensors", "model.safetensors"]
+
 
 @dataclass
 class Predictions:
@@ -178,17 +180,25 @@ class DETR(nn.Module):
 
         # Attempt to find the model weights in an accelerate checkpoint if a directory is provided
         if pretrained_weights.is_dir():
-            if (pretrained_weights / "model.safetensors").exists():
-                # Weights directly point to the checkpoint folder
-                pretrained_weights = pretrained_weights / "model.safetensors"
-            else:
+
+            def find_weight_file(directory: Path) -> Optional[Path]:
+                for file in VALID_WEIGHT_FILES:
+                    if (directory / file).exists():
+                        return directory / file
+                return None
+
+            weight_path = find_weight_file(pretrained_weights)
+
+            if weight_path is None:
                 # Weights point to a parent folder containing multiple checkpoint folders
-                checkpoints = sorted(d for d in pretrained_weights.iterdir() if d.is_dir() and len(list(d.glob("model.safetensors"))) > 0)
+                checkpoints = sorted(d for d in pretrained_weights.iterdir() if d.is_dir() and find_weight_file(d) is not None)
 
                 if not checkpoints:
-                    raise FileNotFoundError(f"No checkpoint directories containing 'model.safetensors' found in '{pretrained_weights}'.")
+                    raise FileNotFoundError(f"No checkpoint directories containing model weights found in '{pretrained_weights}'.")
 
-                pretrained_weights = checkpoints[-1] / "model.safetensors"
+                weight_path = find_weight_file(checkpoints[-1])
+
+            pretrained_weights = weight_path
 
         logging.info(f"Loading pretrained weights from '{pretrained_weights}'.")
 
@@ -198,6 +208,9 @@ class DETR(nn.Module):
             state_dict = load_file(pretrained_weights, device="cpu")
         else:
             raise ValueError(f"Unsupported pretrained weights format: {pretrained_weights}")
+
+        # Strip module prefix and EMA metadata if present
+        state_dict = {k.removeprefix("module."): v for k, v in state_dict.items() if k != "n_averaged"}
 
         # During inference we use a single query group
         if len(self.decoder.queries.weight) < len(state_dict["decoder.queries.weight"]):

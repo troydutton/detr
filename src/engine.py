@@ -8,12 +8,14 @@ import wandb
 from accelerate import Accelerator
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
+from torch.optim.swa_utils import AveragedModel
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from criterion import Criterion
 from evaluators import Evaluator
 from models import DETR
+from utils.checkpoint import save_checkpoint
 
 if TYPE_CHECKING:
     from data.transforms import Transformation
@@ -21,6 +23,7 @@ if TYPE_CHECKING:
 
 def train(
     model: DETR,
+    ema_model: AveragedModel,
     optimizer: Optimizer,
     scheduler: _LRScheduler,
     criterion: Criterion,
@@ -40,6 +43,7 @@ def train(
 
     Args:
         model: Model to train.
+        ema_model: EMA model to update and evaluate.
         optimizer: Optimizer.
         scheduler: Learning rate scheduler.
         criterion: Loss function.
@@ -59,6 +63,7 @@ def train(
         # Train for a single epoch
         train_one_epoch(
             model=model,
+            ema_model=ema_model,
             optimizer=optimizer,
             criterion=criterion,
             scheduler=scheduler,
@@ -71,7 +76,7 @@ def train(
 
         # Evaluate the model
         val_losses, val_metrics = evaluate(
-            model=model,
+            model=ema_model,
             criterion=criterion,
             evaluator=evaluator,
             data=val_data,
@@ -87,13 +92,14 @@ def train(
         # Save the model weights
         if (epoch + 1) % save_period == 0 or (epoch + 1) == num_epochs:
             checkpoint_dir = Path(output_dir) / f"{epoch + 1}"
-            accelerator.save_state(checkpoint_dir)
+            save_checkpoint(accelerator, checkpoint_dir, ema_model=ema_model)
 
         torch.cuda.empty_cache()
 
 
 def train_one_epoch(
     model: DETR,
+    ema_model: AveragedModel,
     optimizer: Optimizer,
     criterion: Criterion,
     scheduler: _LRScheduler,
@@ -109,6 +115,7 @@ def train_one_epoch(
 
     Args:
         model: Model to train.
+        ema_model: EMA model to update.
         optimizer: Optimizer.
         criterion: Loss function.
         scheduler: Learning rate scheduler.
@@ -149,6 +156,9 @@ def train_one_epoch(
 
             # Step the learning rate scheduler every update
             scheduler.step()
+
+            # Update EMA parameters
+            ema_model.update_parameters(model)
 
             # Log the loss
             if accelerator.is_main_process and accelerator.sync_gradients:
