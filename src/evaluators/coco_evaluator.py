@@ -78,6 +78,7 @@ class CocoEvaluator(Evaluator):
         boxes = box_convert(boxes, in_fmt="cxcywh", out_fmt="xywh")
         boxes = boxes * image_scales[:, None, :]
 
+        # Gather predictions across processes
         if accelerator is not None:
             image_ids = accelerator.gather_for_metrics(image_ids)
             boxes = accelerator.gather_for_metrics(boxes)
@@ -87,6 +88,7 @@ class CocoEvaluator(Evaluator):
             if not accelerator.is_main_process:
                 return
 
+        # Add predictions in COCO format
         image_ids = image_ids.tolist()
         boxes = boxes.tolist()
         scores = scores.tolist()
@@ -136,38 +138,40 @@ class CocoEvaluator(Evaluator):
             }
         }
 
-        if self.class_metrics:
-            precision = coco_eval.eval["precision"][..., -1]  # (iou_thresholds, recall_thresholds, category_ids, area_ranges)
+        if not self.class_metrics:
+            return metrics
 
-            # Compute metrics, ignoring missing values
-            precision = np.ma.masked_values(precision, -1)
-            ap = np.mean(precision[:, :, :, 0], axis=(0, 1))
-            ap50 = np.mean(precision[0, :, :, 0], axis=0)
-            ap75 = np.mean(precision[5, :, :, 0], axis=0)
-            ap_s = np.mean(precision[:, :, :, 1], axis=(0, 1))
-            ap_m = np.mean(precision[:, :, :, 2], axis=(0, 1))
-            ap_l = np.mean(precision[:, :, :, 3], axis=(0, 1))
+        # Calculate per-category metrics
+        precision = coco_eval.eval["precision"][..., -1]  # (iou_thresholds, recall_thresholds, category_ids, area_ranges)
 
-            # Indicate metrics with no instances as missing
-            ap = np.ma.filled(ap, -1)
-            ap50 = np.ma.filled(ap50, -1)
-            ap75 = np.ma.filled(ap75, -1)
-            ap_s = np.ma.filled(ap_s, -1)
-            ap_m = np.ma.filled(ap_m, -1)
-            ap_l = np.ma.filled(ap_l, -1)
+        # Category metrics with no relevant instances are set to -1
+        precision = np.ma.masked_values(precision, -1)
+        ap = np.mean(precision[:, :, :, 0], axis=(0, 1))
+        ap50 = np.mean(precision[0, :, :, 0], axis=0)
+        ap75 = np.mean(precision[5, :, :, 0], axis=0)
+        ap_s = np.mean(precision[:, :, :, 1], axis=(0, 1))
+        ap_m = np.mean(precision[:, :, :, 2], axis=(0, 1))
+        ap_l = np.mean(precision[:, :, :, 3], axis=(0, 1))
 
-            metrics.update(
-                {
-                    name: {
-                        "AP": ap[i],
-                        "AP50": ap50[i],
-                        "AP75": ap75[i],
-                        "APs": ap_s[i],
-                        "APm": ap_m[i],
-                        "APl": ap_l[i],
-                    }
-                    for i, name in enumerate(self.category_names)
+        ap = np.ma.filled(ap, -1)
+        ap50 = np.ma.filled(ap50, -1)
+        ap75 = np.ma.filled(ap75, -1)
+        ap_s = np.ma.filled(ap_s, -1)
+        ap_m = np.ma.filled(ap_m, -1)
+        ap_l = np.ma.filled(ap_l, -1)
+
+        metrics.update(
+            {
+                name: {
+                    "AP": ap[i],
+                    "AP50": ap50[i],
+                    "AP75": ap75[i],
+                    "APs": ap_s[i],
+                    "APm": ap_m[i],
+                    "APl": ap_l[i],
                 }
-            )
+                for i, name in enumerate(self.category_names)
+            }
+        )
 
         return metrics
