@@ -25,7 +25,7 @@ def save_checkpoint(
     if ema_model is not None and accelerator.is_main_process:
         ema_path = Path(checkpoint_path) / "ema_model.safetensors"
         logging.info(f"EMA model weights saved in {ema_path}")
-        state_dict = {k: v.cpu() for k, v in ema_model.state_dict().items()}
+        state_dict = {k: v.cpu().contiguous() for k, v in ema_model.state_dict().items()}
         save_file(state_dict, ema_path)
 
 
