@@ -82,7 +82,6 @@ def main(args: DictConfig) -> None:
 
         print(f"\n{header:=^{width}}")
         print(f"Checkpoint: {checkpoint}")
-        print(f"Dataset: {val_dataset.root / val_dataset.split}")
         print(f"{' Losses ':-^{width}}")
         print(", ".join([f"{k}: {v:.2f}" for k, v in losses.items()]))
 

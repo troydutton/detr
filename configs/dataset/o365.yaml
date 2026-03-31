@@ -1,11 +1,9 @@
 train:
   _target_: data.CocoDataset
-  dataset_root: /path/to/o365
-  split: train
+  roots: /path/to/o365/train
   transforms: ${transforms.train}
 
 val:
   _target_: data.CocoDataset
-  dataset_root: ${dataset.train.dataset_root}
-  split: val
+  roots: /path/to/o365/val
   transforms: ${transforms.val}

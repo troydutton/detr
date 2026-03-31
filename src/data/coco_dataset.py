@@ -1,6 +1,7 @@
+import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Tuple
 
 import PIL.Image
 import torch
@@ -14,10 +15,10 @@ from torchvision.tv_tensors import BoundingBoxes, Image
 from data.transforms import Transformation
 from utils.misc import silence_stdout
 
-COCOAnnotations = List[Dict[str, Any]]
-Target = Dict[str, Union[Tensor, BoundingBoxes]]
+ImageAnnotations = List[Dict[str, Any]]
+Target = Dict[str, Tensor | BoundingBoxes]
 
-#  Allow loading large images without hitting decompression bomb errors
+# Allow loading large images without hitting decompression bomb errors
 PIL.Image.MAX_IMAGE_PIXELS = None
 
 
@@ -25,23 +26,41 @@ class CocoDataset(Dataset):
     """
     COCO-style object detection dataset.
 
+    Expects the following directory structure:
+    root/
+    ├── _annotations.coco.json
+    ├── images/
+    ├──── image0.jpg
+    ├──── image1.jpg
+    ├──── ...
+
     Args:
-        dataset_root: Root of the dataset.
-        split: Dataset split to use ("train", "val", or "test").
+        roots: Root for each dataset.
         transforms: Transformations to apply to each image, optional.
+        image_directory: Name of the image directory within each root, optional.
+        annotation_name: Name of the annotation file within each root, optional.
     """
 
-    def __init__(self, dataset_root: Union[str, Path], split: str, transforms: Transformation = None) -> None:
-        self.root = Path(dataset_root)
-        self.split = split
+    def __init__(
+        self,
+        roots: str | List[str],
+        transforms: Transformation = None,
+        image_directory: str = "images",
+        annotation_name: str = "_annotations.coco.json",
+    ) -> None:
+        # We allow multiple roots since we may want to merge multiple datasets
+        if isinstance(roots, (str, Path)):
+            roots = [roots]
+
+        self.roots = [Path(roots) for roots in roots]
         self.transforms = transforms
+        self.image_directory = image_directory
+        self.annotation_name = annotation_name
 
-        logging.info(f"Loading '{self.root / self.split}'.")
+        logging.info(f"Loading {len(self.roots)} dataset(s)")
 
-        # Initialize COCO API (silencing stdout to avoid clutter)
-        with silence_stdout():
-            self.coco = COCO(self.root / f"annotations/{split}.json")
-            self.coco.createIndex()
+        # Create a single COCO dataset from the provided roots
+        self.coco = self._create_coco_dataset(self.roots)
         self.image_ids = list(self.coco.imgs.keys())
 
         # Mapping from category ids to contiguous 0-indexed labels
@@ -49,7 +68,7 @@ class CocoDataset(Dataset):
         self.category_id_to_label = {cat_id: i for i, cat_id in enumerate(category_ids)}
         self.num_classes = len(self.category_id_to_label)
 
-        logging.info(f"Loaded {len(self.image_ids):,} images with {self.num_classes} classes from '{self.root / self.split}'.")
+        logging.info(f"Loaded {len(self.image_ids):,} images with {self.num_classes} classes.")
 
     def __len__(self):
         return len(self.image_ids)
@@ -81,7 +100,7 @@ class CocoDataset(Dataset):
         image_info = self.coco.loadImgs(image_id)[0]
 
         # Load the image
-        image = PIL.Image.open(self.root / self.split / image_info["file_name"]).convert("RGB")
+        image = PIL.Image.open(image_info["file_name"]).convert("RGB")
         w, h = image.size
 
         # Convert COCO object annotations to our expected format
@@ -105,7 +124,7 @@ class CocoDataset(Dataset):
 
         return image, target
 
-    def _convert_object_annotations(self, annotations: COCOAnnotations, height: int, width: int) -> Target:
+    def _convert_object_annotations(self, annotations: ImageAnnotations, height: int, width: int) -> Target:
         """
         Convert COCO annotations to an expected format.
 
@@ -148,6 +167,77 @@ class CocoDataset(Dataset):
         }
 
         return target
+
+    def _create_coco_dataset(self, roots: List[Path]) -> COCO:
+        """
+        Create a single COCO dataset from multiple roots.
+
+        Args:
+            roots: List of dataset roots to merge.
+
+        Returns:
+            coco: Combined COCO dataset.
+        """
+
+        dataset = {"images": [], "annotations": [], "categories": []}
+
+        image_id = 1
+        annotation_id = 1
+
+        for root_index, root in enumerate(roots):
+            with open(root / self.annotation_name) as f:
+                root_dataset = json.load(f)
+
+            # Ensure categories are consistent across datasets
+            root_categories = sorted(root_dataset["categories"], key=lambda category: category["id"])
+            if len(dataset["categories"]) == 0:
+                dataset["categories"] = root_categories
+
+            if root_categories != dataset["categories"]:
+                raise ValueError(f"Inconsistent categories in {root}: expected {dataset['categories']}, got {root_categories}")
+
+            image_id_map = {}
+
+            for image_info in root_dataset["images"]:
+                # Remap image ids to a contigous range to ensure uniqueness
+                image_id_map[image_info["id"]] = image_id
+                image_info["id"] = image_id
+                image_id += 1
+
+                # Resolve image paths now to make loading easier later
+                file_name = Path(image_info["file_name"])
+                if not file_name.is_absolute():
+                    file_name = root / self.image_directory / file_name
+
+                # Fail fast if any images are missing
+                if not file_name.exists():
+                    raise FileNotFoundError(f"Image not found: {file_name}")
+
+                image_info["file_name"] = str(file_name)
+
+                # Add dataset metadata
+                image_info["dataset"] = root_index
+
+            dataset["images"].extend(root_dataset["images"])
+
+            # Annotations
+            for annotation in root_dataset["annotations"]:
+                # Remap annotation ids to a contigous range to ensure uniqueness
+                annotation["id"] = annotation_id
+                annotation_id += 1
+
+                # Update the image ids in the annotations to match the new image ids
+                annotation["image_id"] = image_id_map[annotation["image_id"]]
+
+            dataset["annotations"].extend(root_dataset["annotations"])
+
+        # Create a COCO object from the merged dataset
+        with silence_stdout():
+            coco = COCO()
+            coco.dataset = dataset
+            coco.createIndex()
+
+        return coco
 
     def get_categories(self) -> List[str]:
         """

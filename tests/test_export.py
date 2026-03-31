@@ -13,17 +13,14 @@ def dummy_coco(tmp_path: Path) -> Path:
     """Creates a dummy COCO dataset for testing purposes."""
     root = tmp_path / "coco"
     root.mkdir()
-    split = "val2017"
-
-    (root / "annotations").mkdir(parents=True, exist_ok=True)
-    (root / split).mkdir(parents=True, exist_ok=True)
+    (root / "images").mkdir(parents=True, exist_ok=True)
 
     width, height = 100, 80
     image_id = 1
     file_name = "000000000001.jpg"
 
     image = Image.new("RGB", (width, height), color="red")
-    image.save(root / split / file_name)
+    image.save(root / "images" / file_name)
 
     annotations = {
         "images": [{"id": image_id, "file_name": file_name, "height": height, "width": width}],
@@ -35,7 +32,7 @@ def dummy_coco(tmp_path: Path) -> Path:
         "info": {},
         "licenses": [],
     }
-    with open(root / "annotations" / f"{split}.json", "w") as f:
+    with open(root / "_annotations.coco.json", "w") as f:
         json.dump(annotations, f)
 
     return root
@@ -49,7 +46,8 @@ def test_export(tmp_path: Path, dummy_coco: Path, config_name: str) -> None:
         cfg = compose(
             config_name=config_name,
             overrides=[
-                f"dataset.train.dataset_root={dummy_coco}",
+                f"dataset.train.roots={dummy_coco}",
+                f"dataset.val.roots={dummy_coco}",
                 f"train.output_dir={output_dir}",
                 "train.num_workers=0",
                 "model.pretrained_weights=null",

@@ -1,11 +1,9 @@
 train:
   _target_: data.CocoDataset
-  dataset_root: /path/to/coco
-  split: train2017
+  roots: /path/to/coco/train
   transforms: ${transforms.train}
 
 val:
   _target_: data.CocoDataset
-  dataset_root: ${dataset.train.dataset_root}
-  split: val2017
+  roots: /path/to/coco/val
   transforms: ${transforms.val}

@@ -17,11 +17,9 @@ def coco_path(tmp_path: Path) -> Path:
     """
 
     root = tmp_path
-    split = "val2017"
 
     # Replicate COCO directory structure
-    (root / "annotations").mkdir(parents=True, exist_ok=True)
-    (root / split).mkdir(parents=True, exist_ok=True)
+    (root / "images").mkdir(parents=True, exist_ok=True)
 
     # Dummy image parameters
     width, height = 100, 80
@@ -30,7 +28,7 @@ def coco_path(tmp_path: Path) -> Path:
 
     # Dummy image
     image = Image.new("RGB", (width, height), color="red")
-    image.save(root / split / file_name)
+    image.save(root / "images" / file_name)
 
     # Dummy annotations
     annotations = {
@@ -41,7 +39,7 @@ def coco_path(tmp_path: Path) -> Path:
         ],
         "categories": [{"id": 1, "name": "person"}, {"id": 2, "name": "dog"}],
     }
-    with open(root / f"annotations/{split}.json", "w") as f:
+    with open(root / "_annotations.coco.json", "w") as f:
         json.dump(annotations, f)
 
     return root
@@ -52,8 +50,7 @@ def test_coco_dataset_basic(coco_path: Path) -> None:
     Test basic functionality of the CocoDataset without transformations.
     Verifies output shapes, target fields, and box formats for multiple objects.
     """
-    split = "val2017"
-    dataset = CocoDataset(str(coco_path), split, transforms=None)
+    dataset = CocoDataset(str(coco_path), transforms=None)
 
     assert len(dataset) == 1
 
@@ -107,13 +104,12 @@ def test_coco_dataset_transforms(coco_path: Path) -> None:
     Test functionality with transformations pipeline.
     Verifies image resizing and box coordinate normalization.
     """
-    split = "val2017"
     resolution = 200
 
     # Create transformation pipeline
     transforms = make_transformations("val", resolution=resolution)
 
-    dataset = CocoDataset(str(coco_path), split, transforms=transforms)
+    dataset = CocoDataset(str(coco_path), transforms=transforms)
 
     image, target = dataset[0]
 
@@ -140,3 +136,37 @@ def test_coco_dataset_transforms(coco_path: Path) -> None:
 
     assert is_box1_present, f"Expected box 1 {expected_box1} not found in transformed {boxes}"
     assert is_box2_present, f"Expected box 2 {expected_box2} not found in transformed {boxes}"
+
+
+def test_coco_dataset_multiple_roots(tmp_path: Path) -> None:
+    """
+    Test functionality with multiple dataset roots.
+    Verifies that images and annotations from multiple roots are successfully combined.
+    """
+    roots = [tmp_path / "root1", tmp_path / "root2"]
+
+    for root in roots:
+        # Replicate directory structure
+        (root / "images").mkdir(parents=True, exist_ok=True)
+
+        width, height = 100, 80
+        image_id = 1
+        file_name = "000000000001.jpg"
+
+        image = Image.new("RGB", (width, height), color="red")
+        image.save(root / "images" / file_name)
+
+        annotations = {
+            "images": [{"id": image_id, "file_name": file_name, "height": height, "width": width}],
+            "annotations": [
+                {"id": 1, "image_id": image_id, "category_id": 1, "bbox": [10, 20, 30, 40], "area": 1200, "iscrowd": 0},
+            ],
+            # Use consistent categories across roots
+            "categories": [{"id": 1, "name": "person"}, {"id": 2, "name": "dog"}],
+        }
+        with open(root / "_annotations.coco.json", "w") as f:
+            json.dump(annotations, f)
+
+    dataset = CocoDataset([str(r) for r in roots], transforms=None)
+
+    assert len(dataset) == 2
