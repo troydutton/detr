@@ -367,8 +367,9 @@ class TransformerDecoder(Module):
             query_pos[i, :num_queries] = self.pos_projection(build_pos_embed(boxes, 2 * self.embed_dim))
             query_ref[i, :num_queries] = boxes
 
-            # Mask out the padding queries at the end of the sequence
+            # Prevent queries from attending to padding
             padding_mask[i, :num_queries] = False
+            attention_mask[i, :num_queries, num_queries:] = True
 
             # Only allow queries within the same group to attend to each other
             denoise_group_indices = torch.arange(num_queries, device=device) // (2 * num_objects)

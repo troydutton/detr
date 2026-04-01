@@ -96,16 +96,14 @@ class DecoderLayer(Module):
             v = self.norm1(denoise_embed)
             q = k = v + denoise_pos
 
-            denoise_pad = queries.denoise_padding_mask
-            denoise_attn = queries.denoise_attention_mask.repeat_interleave(self.num_heads, dim=0)
+            attn_mask = queries.denoise_attention_mask.repeat_interleave(self.num_heads, dim=0)
 
             denoise_embed = denoise_embed + self.dropout1(
                 self.self_attention(
                     query=q,
                     key=k,
                     value=v,
-                    key_padding_mask=denoise_pad,
-                    attn_mask=denoise_attn,
+                    attn_mask=attn_mask,
                     need_weights=False,
                 )[0]
             )
@@ -215,16 +213,14 @@ class DeformableDecoderLayer(Module):
             v = self.norm1(denoise_embed)
             q = k = v + denoise_pos
 
-            denoise_pad = queries.denoise_padding_mask
-            denoise_attn = queries.denoise_attention_mask.repeat_interleave(self.num_heads, dim=0)
+            attn_mask = queries.denoise_attention_mask.repeat_interleave(self.num_heads, dim=0)
 
             denoise_embed = denoise_embed + self.dropout1(
                 self.self_attention(
                     query=q,
                     key=k,
                     value=v,
-                    key_padding_mask=denoise_pad,
-                    attn_mask=denoise_attn,
+                    attn_mask=attn_mask,
                     need_weights=False,
                 )[0]
             )
