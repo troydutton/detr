@@ -22,7 +22,7 @@ dependencies:
   - timm
   - fvcore
   - iopath
-  - onnxscript
+  - onnx==1.21.0
   - wandb
   - hydra-core
   - ipykernel
@@ -35,6 +35,6 @@ dependencies:
   - htop
   
   - pip:
-    - torch
-    - torchvision
+    - torch==2.11.0+cu126
+    - torchvision==0.26.0+cu126
     - --index-url https://download.pytorch.org/whl/cu126

@@ -23,8 +23,5 @@ conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib
 # Package installation
 pip install --editable .
 
-# TODO: Remove once onnx is fixed
-pip install -U onnx onnxscripts onnx-ir
-
 # Hooks
 pre-commit install

@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Detection Transformers"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["gmpy2"]
+dependencies = ["gmpy2", "onnx-ir==0.2.0", "onnxscript==0.6.2"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
