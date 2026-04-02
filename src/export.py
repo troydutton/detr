@@ -25,13 +25,13 @@ def main(args: DictConfig) -> None:
     image, _ = val_dataset[0]
     image = image.unsqueeze(0)
 
-    # Ensure checkpoint is provided, otherwise export an untrained model with a warning
-    checkpoint = args["train"].get("checkpoint")
-    if not checkpoint:
-        logging.warning("No checkpoint provided, exporting untrained model. Specify with +train.checkpoint=<path>.")
+    # Ensure pretrained weights are provided, notifying the user if not specified
+    pretrained_weights = args["model"].get("pretrained_weights")
+    if not pretrained_weights:
+        logging.warning("Please provide pretrained weights via 'model.pretrained_weights=/path/to/pretrained_weights'")
 
-    # Create the model
-    args["model"]["pretrained_weights"] = checkpoint
+    # Create model (config/model/*.yaml)
+    args["model"]["pretrained_weights"] = pretrained_weights
     args["model"]["categories"] = val_dataset.get_categories()
     args["model"]["decoder"]["num_classes"] = val_dataset.num_classes
     args["model"]["decoder"]["num_groups"] = 1

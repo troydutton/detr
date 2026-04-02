@@ -45,13 +45,13 @@ def main(args: DictConfig) -> None:
         collate_fn=collate_fn,
     )
 
-    # Ensure checkpoint is provided
-    checkpoint = args["train"].get("checkpoint")
-    if not checkpoint:
-        raise ValueError("Please provide a checkpoint path via 'train.checkpoint=/path/to/checkpoint'")
+    # Ensure pretrained weights are provided
+    pretrained_weights = args["model"].get("pretrained_weights")
+    if not pretrained_weights:
+        raise ValueError("Please provide pretrained weights via 'model.pretrained_weights=/path/to/pretrained_weights'")
 
     # Create model (config/model/*.yaml)
-    args["model"]["pretrained_weights"] = checkpoint
+    args["model"]["pretrained_weights"] = pretrained_weights
     args["model"]["categories"] = val_dataset.get_categories()
     args["model"]["decoder"]["num_classes"] = val_dataset.num_classes
     model = DETR(**args["model"])
@@ -81,7 +81,7 @@ def main(args: DictConfig) -> None:
         width = max(len(header), 80)
 
         print(f"\n{header:=^{width}}")
-        print(f"Checkpoint: {checkpoint}")
+        print(f"Weights: {pretrained_weights}")
         print(f"{' Losses ':-^{width}}")
         print(", ".join([f"{k}: {v:.2f}" for k, v in losses.items()]))
 
