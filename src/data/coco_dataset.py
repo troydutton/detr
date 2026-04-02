@@ -57,7 +57,11 @@ class CocoDataset(Dataset):
         self.image_directory = image_directory
         self.annotation_name = annotation_name
 
-        logging.info(f"Loading {len(self.roots)} dataset(s)")
+        # Log the roots being loaded, showing up to 3 for brevity
+        log_roots = [f"`{str(root)}`" for root in self.roots[:3]]
+        if len(self.roots) > 3:
+            log_roots.append(f"and {len(self.roots) - 3} other datasets")
+        logging.info(f"Loading {', '.join(log_roots)}.")
 
         # Create a single COCO dataset from the provided roots
         self.coco = self._create_coco_dataset(self.roots)
