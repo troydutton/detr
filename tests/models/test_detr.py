@@ -7,6 +7,9 @@ from models.detr import Detections
 def test_detr_forward() -> None:
     """
     Test the forward pass of the DETR model.
+
+    Instantiates a mock DETR architecture and tests the shapes and formats
+    of the boxes and logits outputted in a forward pass.
     """
     # Test parameters
     batch_size = 2
@@ -79,6 +82,9 @@ def test_detr_forward() -> None:
 def test_detr_predict() -> None:
     """
     Test the predict method of the DETR model.
+
+    Instantiates a mock DETR architecture and tests the shapes and formats
+    of the predicted Detections objects.
     """
     # Test parameters
     batch_size = 2
