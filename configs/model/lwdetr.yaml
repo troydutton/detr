@@ -21,7 +21,7 @@ backbone:
   enable_projector: True
   projector:
     embed_dim: ${model.embed_dim}
-    out_strides: [8]
+    out_strides: [16]
     num_blocks: 3
   pretrained: True
 
