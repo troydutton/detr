@@ -145,20 +145,21 @@ def train_one_epoch(
             # Calculate the loss
             losses = criterion(predictions, targets, accelerator)
 
-            # Backward pass & optimizer step
+            # Backward pass
             accelerator.backward(losses["overall"])
 
+            # Clip gradients and calculate the average losses across processes for logging
             if accelerator.sync_gradients:
                 accelerator.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
                 losses = {k: torch.mean(accelerator.reduce(v.detach(), reduction="mean")).item() for k, v in losses.items()}
 
+            # Update the parameters and learning rate
             optimizer.step()
-
-            # Step the learning rate scheduler every update
             scheduler.step()
 
-            # Update EMA parameters
-            ema_model.update_parameters(model)
+            # Update the EMA model
+            if accelerator.sync_gradients:
+                ema_model.update_parameters(model)
 
             # Log the loss
             if accelerator.is_main_process and accelerator.sync_gradients:
