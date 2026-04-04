@@ -49,7 +49,7 @@ class Projector(nn.Module):
         # Create the multi-scale feature fusion stages
         self.fusion_stages = nn.ModuleList()
         for _ in out_strides:
-            self.fusion_stages.append(C2f(embed_dim * len(in_strides), embed_dim, embed_dim, num_blocks, activation=activation))
+            self.fusion_stages.append(C2f(embed_dim * len(in_strides), embed_dim // 2, embed_dim, num_blocks, activation=activation))
 
     def forward(self, backbone_features: List[Tensor]) -> List[Tensor]:
         """
@@ -110,6 +110,7 @@ class Projector(nn.Module):
             return nn.Sequential(
                 nn.Conv2d(embed_dim, embed_dim, kernel_size=3, stride=2, padding=1, bias=False),
                 LayerNorm2d(embed_dim),
+                self.activation(),
             )
         elif ratio == 0.25:  # Downsample 4x
             return nn.Sequential(
@@ -118,6 +119,7 @@ class Projector(nn.Module):
                 self.activation(),
                 nn.Conv2d(embed_dim, embed_dim, kernel_size=3, stride=2, padding=1, bias=False),
                 LayerNorm2d(embed_dim),
+                self.activation(),
             )
         else:
             raise NotImplementedError(f"Unsupported stride ratio: {ratio} ({in_stride=}, {out_stride=})")
