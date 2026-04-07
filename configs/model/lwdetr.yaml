@@ -40,7 +40,7 @@ encoder:
 decoder:
   num_layers: 3
   two_stage: True
-  refine_boxes: True
+  refine_boxes: False 
   denoise_queries: True
   num_groups: ${model.num_groups}
   num_queries: ${model.num_queries}
