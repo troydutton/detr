@@ -227,7 +227,7 @@ class Bottleneck(nn.Module):
         in_channels: int,
         out_channels: int,
         *,
-        expansion: float = 1.0,
+        expansion: float = 0.5,
         activation: Type[nn.Module] = nn.SiLU,
     ) -> None:
         super().__init__()
