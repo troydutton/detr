@@ -4,7 +4,7 @@ defaults:
   - transforms: small
   - model: lwdetr
   - optimizer: lwdetr
-  - scheduler: lwdetr
+  - scheduler: cosine
   - criterion: lwdetr
   - ema: constant 
   - _self_

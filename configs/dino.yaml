@@ -4,7 +4,7 @@ defaults:
   - transforms: nano
   - model: dino
   - optimizer: dino 
-  - scheduler: dino
+  - scheduler: step
   - criterion: dino 
   - ema: constant 
   - _self_

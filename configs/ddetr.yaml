@@ -4,7 +4,7 @@ defaults:
   - transforms: nano
   - model: ddetr
   - optimizer: ddetr 
-  - scheduler: ddetr
+  - scheduler: step
   - criterion: ddetr
   - ema: constant 
   - _self_
