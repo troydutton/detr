@@ -15,9 +15,9 @@ neg_noise_scale: 0.8
 label_noise_prob: 0.25
 
 backbone:
-  name: convnext_tiny.dinov3_lvd1689m
+  name: facebook/dinov2-with-registers-small
   embed_dim: ${model.embed_dim}
-  num_levels: ${model.num_levels}
+  out_feature_indices: [2, 5, 8, 11]
   enable_projector: True
   projector:
     embed_dim: ${model.embed_dim}
