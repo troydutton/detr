@@ -51,12 +51,10 @@ class DETR(nn.Module):
         self.backbone = Backbone(**kwargs["backbone"])
 
         # Build the transformer encoder and decoder
-        if "num_levels" in kwargs["encoder"]["layer"]:
-            kwargs["encoder"]["layer"]["num_levels"] = self.backbone.num_output_levels
+        kwargs["encoder"]["layer"]["num_levels"] = self.backbone.num_output_levels
         self.encoder = TransformerEncoder(**kwargs["encoder"])
 
-        if "num_levels" in kwargs["decoder"]["layer"]:
-            kwargs["decoder"]["layer"]["num_levels"] = self.backbone.num_output_levels
+        kwargs["decoder"]["layer"]["num_levels"] = self.backbone.num_output_levels
         self.decoder = TransformerDecoder(**kwargs["decoder"])
 
         # Label to category name mapping for use in predictions
@@ -168,6 +166,7 @@ class DETR(nn.Module):
         Args:
             pretrained_weights: Path to a pretrained weights file or an accelerate checkpoint directory containing a `model.safetensors` file.
         """
+
         # Check for BatchNorm layers
         for module_name, module in self.backbone.named_modules():
             if isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):

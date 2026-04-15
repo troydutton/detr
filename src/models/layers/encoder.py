@@ -26,6 +26,7 @@ class EncoderLayer(nn.Module):
         ffn_dim: int,
         num_heads: int,
         dropout: float = 0.0,
+        **_,
     ) -> None:
         super().__init__()
 

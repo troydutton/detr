@@ -5,7 +5,6 @@ ffn_dim: 2048
 num_heads: 8
 num_deformable_heads: 16
 num_points: 2
-num_levels: 3
 dropout: 0.1
 num_groups: 13
 num_queries: 300
@@ -15,14 +14,15 @@ neg_noise_scale: 0.8
 label_noise_prob: 0.25
 
 backbone:
-  name: facebook/dinov2-with-registers-small
   embed_dim: ${model.embed_dim}
-  out_feature_indices: [2, 5, 8, 11]
-  window_layer_indices: [0, 1, 3, 4, 6, 7, 9, 10]
-  num_windows: 2
-  enable_projector: True
+  feature_extractor:
+    name: facebook/dinov2-with-registers-small
+    out_feature_indices: [2, 5, 8, 11]
+    window_layer_indices: [0, 1, 3, 4, 6, 7, 9, 10]
+    num_windows: 2
   projector:
     embed_dim: ${model.embed_dim}
+    multi_scale: True
     out_strides: [16]
     num_blocks: 3
   pretrained: True
@@ -36,7 +36,6 @@ encoder:
     ffn_dim: ${model.ffn_dim}
     num_heads: ${model.num_deformable_heads}
     num_points: ${model.num_points}
-    num_levels: ${model.num_levels}
     dropout: ${model.dropout}
 
 decoder:
@@ -58,5 +57,4 @@ decoder:
     num_heads: ${model.num_heads}
     num_deformable_heads: ${model.num_deformable_heads}
     num_points: ${model.num_points}
-    num_levels: ${model.num_levels}
     dropout: ${model.dropout}

@@ -15,66 +15,83 @@ class Projector(nn.Module):
 
     Args:
         embed_dim: The channel dimension for all input and output feature maps.
-        in_strides: List of strides map relative to original image size.
-        out_strides: List of target spatial strides defining final feature sizes.
-        num_blocks: Number of bottleneck blocks per target resolution fusion block.
-        activation: Activation function module type.
+        in_channels: List of input channel dimensions.
+        in_strides: List of strides map relative to original image size, optional.
+        out_strides: List of target spatial strides defining final feature sizes, optional.
+        num_blocks: Number of bottleneck blocks per target resolution fusion block, optional.
+        activation: Activation function module type, optional.
+        multi_scale: Whether to perform multi-scale fusion, optional.
     """
 
     def __init__(
         self,
         embed_dim: int,
-        in_strides: List[int],
-        out_strides: List[int],
-        *,
+        in_channels: List[int],
+        in_strides: List[int] = None,
+        out_strides: List[int] = None,
         num_blocks: int = 3,
         activation: Type[nn.Module] = nn.SiLU,
+        *,
+        multi_scale: bool = True,
     ) -> None:
         super().__init__()
 
-        self.in_strides = in_strides
-        self.out_strides = out_strides
-        self.num_blocks = num_blocks
+        self.multi_scale = multi_scale
         self.activation = activation
-        self.num_output_levels = len(out_strides)
+        self.num_output_levels = len(out_strides) if multi_scale else len(in_channels)
 
-        # Create the spatial resampling stages
-        self.resampling_stages = nn.ModuleList()
-        for target_stride in out_strides:
-            resampling_layers = nn.ModuleList()
-            for in_stride in in_strides:
-                resampling_layers.append(self._build_resampling_layer(embed_dim, in_stride, target_stride))
-            self.resampling_stages.append(resampling_layers)
+        # Create projections from each backbone output to the desired embedding dimension
+        self.projections = nn.ModuleList()
+        for in_channel in in_channels:
+            self.projections.append(nn.Conv2d(in_channel, embed_dim, kernel_size=1))
 
-        # Create the multi-scale feature fusion stages
-        self.fusion_stages = nn.ModuleList()
-        for _ in out_strides:
-            self.fusion_stages.append(C2f(embed_dim * len(in_strides), embed_dim // 2, embed_dim, num_blocks, activation=activation))
+        # When multi-scale fusion is disabled, we simply project each backbone feature
+        if self.multi_scale:
+            # Create the spatial resampling stages
+            self.resampling_stages = nn.ModuleList()
+            for target_stride in out_strides:
+                resampling_layers = nn.ModuleList()
+                for in_stride in in_strides:
+                    resampling_layers.append(self._build_resampling_layer(embed_dim, in_stride, target_stride))
+                self.resampling_stages.append(resampling_layers)
+
+            # Create the multi-scale feature fusion stages
+            self.fusion_stages = nn.ModuleList()
+            for _ in out_strides:
+                self.fusion_stages.append(C2f(embed_dim * len(in_strides), embed_dim // 2, embed_dim, num_blocks, activation))
+
+        self._initialize_weights()
 
     def forward(self, backbone_features: List[Tensor]) -> List[Tensor]:
         """
         Args:
-            features: List of backbone features with shape (batch_size, channels, height, width).
+            backbone_features: List of backbone features with shape (batch_size, in_channels, height, width).
 
         Returns:
-            projected_features: List of projected features with shape (batch_size, channels, height, width).
+            output_features: List of projected features with shape (batch_size, embed_dim, height, width).
         """
 
-        projected_features = []
+        # Project all features to the desired embedding dimension
+        backbone_features = [projection(feature) for projection, feature in zip(self.projections, backbone_features)]
+
+        if not self.multi_scale:
+            return backbone_features
+
+        output_features = []
 
         for resampling_stage, fusion_stage in zip(self.resampling_stages, self.fusion_stages):
             # Resample all backbone features to the target spatial resolution
-            features = [resampler(feature) for resampler, feature in zip(resampling_stage, backbone_features)]
+            stage_features = [resampler(feature) for resampler, feature in zip(resampling_stage, backbone_features)]
 
             # Concatenate along the channel dimension
-            features = torch.cat(features, dim=1)
+            stage_features = torch.cat(stage_features, dim=1)
 
             # Fuse the concatenated features with a C2f block
-            features = fusion_stage(features)
+            stage_features = fusion_stage(stage_features)
 
-            projected_features.append(features)
+            output_features.append(stage_features)
 
-        return projected_features
+        return output_features
 
     def _build_resampling_layer(self, embed_dim: int, in_stride: int, out_stride: int) -> nn.Module:
         """
@@ -124,6 +141,13 @@ class Projector(nn.Module):
         else:
             raise NotImplementedError(f"Unsupported stride ratio: {ratio} ({in_stride=}, {out_stride=})")
 
+    @torch.no_grad()
+    def _initialize_weights(self) -> None:
+        """Initialize the projection weights."""
+        for projection in self.projections:
+            nn.init.xavier_uniform_(projection.weight)
+            nn.init.zeros_(projection.bias)
+
     @take_annotation_from(forward)
     def __call__(self, *args, **kwargs):
         return nn.Module.__call__(self, *args, **kwargs)
@@ -147,7 +171,6 @@ class C2f(nn.Module):
         hidden_channels: int,
         out_channels: int,
         num_blocks: int,
-        *,
         activation: Type[nn.Module] = nn.SiLU,
     ) -> None:
         super().__init__()

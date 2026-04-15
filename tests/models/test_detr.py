@@ -24,7 +24,13 @@ def test_detr_forward() -> None:
     kwargs = {
         "embed_dim": embed_dim,
         "backbone": {
-            "name": "convnext_tiny",
+            "feature_extractor": {
+                "name": "facebook/dinov2-with-registers-small",
+                "out_feature_indices": [2, 5, 8, 11],
+                "window_layer_indices": [0, 1, 3, 4, 6, 7, 9, 10],
+                "num_windows": 2,
+            },
+            "projector": {"embed_dim": embed_dim, "multi_scale": True, "out_strides": [16], "num_blocks": 3},
             "embed_dim": embed_dim,
             "pretrained": False,
         },
@@ -99,7 +105,13 @@ def test_detr_predict() -> None:
     kwargs = {
         "embed_dim": embed_dim,
         "backbone": {
-            "name": "convnext_tiny",
+            "feature_extractor": {
+                "name": "facebook/dinov2-with-registers-small",
+                "out_feature_indices": [2, 5, 8, 11],
+                "window_layer_indices": [0, 1, 3, 4, 6, 7, 9, 10],
+                "num_windows": 2,
+            },
+            "projector": {"embed_dim": embed_dim, "multi_scale": True, "out_strides": [16], "num_blocks": 3},
             "embed_dim": embed_dim,
             "pretrained": False,
         },

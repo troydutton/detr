@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from models.dinov2 import Dinov2WithRegistersConfig, Dinov2WithRegistersModel
+from models.dinov2 import Dinov2WithRegistersModel
 from models.layers.positional_embedding import build_pos_embed
 from models.projector import Projector
 from utils.misc import take_annotation_from
@@ -26,55 +26,38 @@ class Features:
 class Backbone(nn.Module):
     """
     Args:
-        name: Name of the backbone (e.g. dinov2_vits14).
         embed_dim: Dimension of the output embeddings.
-        out_feature_indices: Indices of the stages from which features should be extracted.
-        pretrained: Whether to load pretrained weights, optional.
-        **kwargs: Arguments to construct the projector. See `models.projector.Projector`.
+        **kwargs: Arguments to construct the feature extractor and projector.
+            See `models.dinov2.Dinov2WithRegistersModel` and `models.projector.Projector`.
     """
 
     def __init__(
         self,
-        name: str,
         embed_dim: int,
-        out_feature_indices: List[int] = [-1],
         *,
-        enable_projector: bool = False,
         enable_level_pos: bool = False,
-        pretrained: bool = True,
         **kwargs,
     ) -> None:
         super().__init__()
 
         self.embed_dim = embed_dim
-        self.out_feature_indices = out_feature_indices
-        self.enable_projector = enable_projector
 
-        # Configure DINOv2
-        config = Dinov2WithRegistersConfig.from_pretrained(name)
-        config.image_size = 512
-        config.patch_size = 16
-        self.backbone = Dinov2WithRegistersModel(config, out_feature_indices=out_feature_indices)
+        # Initialize the feature extractor
+        self.feature_extractor = Dinov2WithRegistersModel(**kwargs["feature_extractor"])
 
-        feature_channels = [config.hidden_size for _ in out_feature_indices]
-        feature_strides = [config.patch_size for _ in out_feature_indices]
+        # Initialize the projector
+        feature_channels = [self.feature_extractor.config.hidden_size for _ in self.feature_extractor.out_feature_indices]
+        feature_strides = [self.feature_extractor.config.patch_size for _ in self.feature_extractor.out_feature_indices]
 
-        # Create projections from each backbone output to the desired embedding dimension
-        self.projections = nn.ModuleList()
-        for in_channels in feature_channels:
-            self.projections.append(nn.Conv2d(in_channels, embed_dim, kernel_size=1))
-        self.projections.to(memory_format=torch.channels_last)
+        self.projector: Projector = Projector(
+            in_channels=feature_channels,
+            in_strides=feature_strides,
+            **kwargs["projector"],
+        ).to(memory_format=torch.channels_last)
 
-        # Initialize the multi-scale projector if requested
-        if enable_projector:
-            self.projector: Projector = Projector(in_strides=feature_strides, **kwargs["projector"]).to(memory_format=torch.channels_last)
-
-        # Per-level positional embeddings
-        self.num_output_levels = self.projector.num_output_levels if enable_projector else len(out_feature_indices)
-
+        # Level positional embeddings
+        self.num_output_levels = self.projector.num_output_levels
         self.level_pos = nn.Embedding(self.num_output_levels, embed_dim) if enable_level_pos else None
-
-        self._initialize_weights()
 
     def forward(self, images: Tensor) -> Features:
         """
@@ -86,13 +69,9 @@ class Backbone(nn.Module):
         """
 
         # Extract backbone features
-        backbone_features = self.backbone(images)
+        backbone_features = self.feature_extractor(images)
 
-        # Project all features to the desired embedding dimension
-        features: List[Tensor] = [projection(feature) for projection, feature in zip(self.projections, backbone_features)]
-
-        if self.enable_projector:
-            features = self.projector(features)
+        features = self.projector(backbone_features)
 
         return self._build_features(features)
 
@@ -148,15 +127,6 @@ class Backbone(nn.Module):
             levels=all_levels,
             dimensions=dimensions,
         )
-
-    @torch.no_grad()
-    def _initialize_weights(self) -> None:
-        """Initialize the backbone weights."""
-
-        # Initialize projection weights to maintain variance
-        for projection in self.projections:
-            nn.init.xavier_uniform_(projection.weight)
-            nn.init.zeros_(projection.bias)
 
     @take_annotation_from(forward)
     def __call__(self, *args, **kwargs):

@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
-from hydra import compose, initialize
+from omegaconf import DictConfig
 from PIL import Image
 
 from export import main as export_main
@@ -38,22 +38,71 @@ def dummy_coco(tmp_path: Path) -> Path:
     return root
 
 
-@pytest.mark.parametrize("config_name", ["detr"])
-def test_export(tmp_path: Path, dummy_coco: Path, config_name: str) -> None:
+def test_export(tmp_path: Path, dummy_coco: Path) -> None:
     output_dir = tmp_path / "output"
 
-    with initialize(version_base=None, config_path="../configs"):
-        cfg = compose(
-            config_name=config_name,
-            overrides=[
-                f"dataset.train.roots={dummy_coco}",
-                f"dataset.val.roots={dummy_coco}",
-                f"train.output_dir={output_dir}",
-                "train.num_workers=0",
-                "model.pretrained_weights=null",
-                "transforms.val.resolution=64",
-            ],
-        )
+    embed_dim = 64
+    num_classes = 10
+    num_decoder_layers = 1
+    num_queries = 5
+    num_groups = 1
+
+    cfg = DictConfig(
+        {
+            "dataset": {
+                "val": {
+                    "_target_": "data.CocoDataset",
+                    "roots": [str(dummy_coco)],
+                    "annotation_name": "_annotations.coco.json",
+                    "image_directory": "images",
+                    "transforms": {"_target_": "data.make_transformations", "split": "val", "resolution": 64},
+                }
+            },
+            "model": {
+                "embed_dim": embed_dim,
+                "backbone": {
+                    "embed_dim": embed_dim,
+                    "feature_extractor": {
+                        "name": "facebook/dinov2-with-registers-small",
+                        "out_feature_indices": [2, 5, 8, 11],
+                        "window_layer_indices": [0, 1, 3, 4, 6, 7, 9, 10],
+                        "num_windows": 2,
+                    },
+                    "projector": {"embed_dim": embed_dim, "multi_scale": True, "out_strides": [16], "num_blocks": 3},
+                    "pretrained": False,
+                },
+                "encoder": {
+                    "num_layers": 1,
+                    "embed_dim": embed_dim,
+                    "layer": {
+                        "_target_": "models.layers.encoder.EncoderLayer",
+                        "embed_dim": embed_dim,
+                        "ffn_dim": 128,
+                        "num_heads": 4,
+                        "dropout": 0.0,
+                    },
+                },
+                "decoder": {
+                    "num_layers": num_decoder_layers,
+                    "embed_dim": embed_dim,
+                    "num_queries": num_queries,
+                    "num_classes": num_classes,
+                    "num_groups": num_groups,
+                    "denoise_queries": False,
+                    "layer": {
+                        "_target_": "models.layers.decoder.DecoderLayer",
+                        "embed_dim": embed_dim,
+                        "ffn_dim": 128,
+                        "num_heads": 4,
+                        "dropout": 0.0,
+                    },
+                },
+                "pretrained_weights": None,
+            },
+            "train": {"output_dir": str(output_dir)},
+            "opset_version": 18,
+        }
+    )
 
     # Run the export script
     export_main(cfg)

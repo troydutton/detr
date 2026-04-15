@@ -1,17 +1,17 @@
 defaults:
-  - hydra: simple
+  - hydra: logging
   - dataset: coco
   - transforms: small
-  - model: lwdetr
-  - optimizer: lwdetr
+  - model: small
+  - optimizer: adamw
   - scheduler: step
-  - criterion: lwdetr
+  - criterion: set
   - ema: constant 
   - _self_
 
 train:
   output_dir: /path/to/output/dir
-  num_epochs: 24
+  num_epochs: 30
   batch_size: 8
   num_workers: 4
   save_period: 10

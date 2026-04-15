@@ -10,7 +10,7 @@
                 "--num_processes=1",
                 "--main_process_port=42069",
                 "src/eval.py",
-                "--config-name=lwdetr",
+                "--config-name=detr",
                 "train.batch_size=2",
             ],
             "console": "integratedTerminal",
@@ -29,10 +29,28 @@
                 "--num_processes=1",
                 "--main_process_port=42069",
                 "src/train.py",
-                "--config-name=lwdetr",
+                "--config-name=detr",
                 "train.output_dir=/data/troy/models/detr/debug",
                 "train.batch_size=2",
                 "dataset=coco",
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "6"
+            },
+            "justMyCode": true
+        },
+        {
+            "name": "Export",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "accelerate.commands.launch",
+            "args": [
+                "--num_processes=1",
+                "--main_process_port=42069",
+                "src/export.py",
+                "--config-name=detr",
             ],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
