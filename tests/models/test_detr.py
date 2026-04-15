@@ -26,6 +26,8 @@ def test_detr_forward() -> None:
         "backbone": {
             "feature_extractor": {
                 "name": "facebook/dinov2-with-registers-small",
+                "image_size": 512,
+                "patch_size": 16,
                 "out_feature_indices": [2, 5, 8, 11],
                 "window_layer_indices": [0, 1, 3, 4, 6, 7, 9, 10],
                 "num_windows": 2,
@@ -107,6 +109,8 @@ def test_detr_predict() -> None:
         "backbone": {
             "feature_extractor": {
                 "name": "facebook/dinov2-with-registers-small",
+                "image_size": 512,
+                "patch_size": 16,
                 "out_feature_indices": [2, 5, 8, 11],
                 "window_layer_indices": [0, 1, 3, 4, 6, 7, 9, 10],
                 "num_windows": 2,

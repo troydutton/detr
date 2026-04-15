@@ -1,67 +1,99 @@
 import logging
 from collections.abc import Iterable
 from math import sqrt
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import torch
+import transformers
 from torch import Tensor, nn
 from torch.nn import functional as F
 from transformers import Dinov2WithRegistersConfig
 from transformers import Dinov2WithRegistersModel as HFDinov2WithRegistersModel
 
-# TODO: Clean up DINOv2 w/ windowed attention, this is heavily slopped :)
+from utils.misc import take_annotation_from
+
+transformers.utils.logging.disable_progress_bar()
 
 
 class Dinov2WithRegistersPatchEmbeddings(nn.Module):
     """
-    This class turns `pixel_values` of shape `(batch_size, num_channels, height, width)` into the initial
-    `hidden_states` (patch embeddings) of shape `(batch_size, seq_length, hidden_size)` to be consumed by a
-    Transformer.
+    Initial convolutional layer responsible for converting the input images into patch embeddings.
+
+    Args:
+        image_size: Size of the input images, interpreted as (image_size, image_size) if a single integer is provided.
+        patch_size: Size of the patches, interpreted as (patch_size, patch_size) if a single integer is provided.
+        num_channels: Number of channels in the input images.
+        hidden_size: Embedding dimension of the patch embeddings.
     """
 
-    def __init__(self, config: Dinov2WithRegistersConfig):
+    def __init__(self, config: Dinov2WithRegistersConfig) -> None:
         super().__init__()
-        image_size, patch_size = config.image_size, config.patch_size
-        num_channels, hidden_size = config.num_channels, config.hidden_size
 
-        image_size = image_size if isinstance(image_size, Iterable) else (image_size, image_size)
-        patch_size = patch_size if isinstance(patch_size, Iterable) else (patch_size, patch_size)
-        num_patches = (image_size[1] // patch_size[1]) * (image_size[0] // patch_size[0])
-        self.image_size = image_size
-        self.patch_size = patch_size
-        self.num_channels = num_channels
-        self.num_patches = num_patches
+        # Assume square images and patches if only a single integer is provided
+        self.image_size = config.image_size if isinstance(config.image_size, Iterable) else (config.image_size, config.image_size)
+        self.patch_size = config.patch_size if isinstance(config.patch_size, Iterable) else (config.patch_size, config.patch_size)
+        self.num_channels = config.num_channels
+        self.hidden_size = config.hidden_size
 
-        self.projection = nn.Conv2d(num_channels, hidden_size, kernel_size=patch_size, stride=patch_size)
+        # Calculate the number of patches for the target resolution
+        height, width = self.image_size
+        patch_height, patch_width = self.patch_size
 
-    def forward(self, pixel_values: Tensor) -> Tensor:
-        num_channels = pixel_values.shape[1]
-        if num_channels != self.num_channels:
-            raise ValueError(
-                "Make sure that the channel dimension of the pixel values match with the one set in the configuration."
-                f" Expected {self.num_channels} but got {num_channels}."
-            )
-        embeddings = self.projection(pixel_values).flatten(2).transpose(1, 2)
+        self.num_patches = (height // patch_height) * (width // patch_width)
+
+        # Initialize the projection layer
+        self.projection = nn.Conv2d(self.num_channels, self.hidden_size, kernel_size=self.patch_size, stride=self.patch_size)
+
+    def forward(self, images: Tensor) -> Tensor:
+        """
+        Convert input images to patch embeddings.
+
+        Args:
+            images: Images with shape (batch_size, num_channels, height, width).
+
+        Returns:
+            embeddings: Patch embeddings with shape (batch_size, num_patches, embed_dim).
+        """
+
+        # Patchify the images
+        embeddings: Tensor = self.projection(images)
+
+        # Collapse the spatial dimensions and move the embedding dimension to the end
+        embeddings = embeddings.flatten(2).transpose(1, 2)
+
         return embeddings
+
+    @take_annotation_from(forward)
+    def __call__(self, *args, **kwargs):
+        return nn.Module.__call__(self, *args, **kwargs)
 
 
 class Dinov2WithRegistersEmbeddings(nn.Module):
     """
-    Construct the CLS token, register tokens, position and patch embeddings.
+    Constructs the CLS token, register tokens, patch embeddings, and adds positional embeddings.
+
+    Args:
+        hidden_size: Embedding dimension.
+        patch_size: Size of the patches, interpreted as (patch_size, patch_size) if a single integer is provided.
+        num_register_tokens: Number of register tokens to prepend.
+        hidden_dropout_prob: The dropout probability for the embeddings.
     """
 
     def __init__(self, config: Dinov2WithRegistersConfig) -> None:
         super().__init__()
 
         self.config = config
+        self.embed_dim = config.hidden_size
         self.patch_size = config.patch_size
+        self.num_register_tokens = config.num_register_tokens
+        self.dropout_prob = config.hidden_dropout_prob
 
-        self.cls_token = nn.Parameter(torch.randn(1, 1, config.hidden_size))
-        self.register_tokens = nn.Parameter(torch.zeros(1, config.num_register_tokens, config.hidden_size))
+        self.cls_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
+        self.register_tokens = nn.Parameter(torch.zeros(1, self.num_register_tokens, self.embed_dim))
         self.patch_embeddings = Dinov2WithRegistersPatchEmbeddings(config)
-        self.position_embeddings = nn.Parameter(torch.randn(1, self.patch_embeddings.num_patches + 1, config.hidden_size))
+        self.position_embeddings = nn.Parameter(torch.randn(1, self.patch_embeddings.num_patches + 1, self.embed_dim))
 
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.dropout = nn.Dropout(self.dropout_prob)
 
     def interpolate_pos_encoding(self, height: int, width: int) -> Tensor:
         """
@@ -141,137 +173,280 @@ class Dinov2WithRegistersEmbeddings(nn.Module):
 
         return embeddings
 
+    @take_annotation_from(forward)
+    def __call__(self, *args, **kwargs):
+        return nn.Module.__call__(self, *args, **kwargs)
+
 
 class Dinov2WithRegistersSelfAttention(nn.Module):
-    def __init__(self, config: Dinov2WithRegistersConfig):
+    """
+    Multi-head self-attention mechanism.
+
+    Args:
+        hidden_size: Embedding dimension.
+        num_attention_heads: Number of attention heads.
+        attention_probs_dropout_prob: The dropout probability for the attention probabilities.
+        qkv_bias: Whether to include bias terms in the query, key, and value projections.
+    """
+
+    def __init__(self, config: Dinov2WithRegistersConfig) -> None:
         super().__init__()
-        if config.hidden_size % config.num_attention_heads != 0 and not hasattr(config, "embedding_size"):
-            raise ValueError(
-                f"The hidden size {config.hidden_size} is not a multiple of the number of attention " f"heads {config.num_attention_heads}."
-            )
+
+        if config.hidden_size % config.num_attention_heads != 0:
+            raise ValueError(f"{config.hidden_size=} is not a multiple of {config.num_attention_heads=}.")
 
         self.config = config
-        self.num_attention_heads = config.num_attention_heads
-        self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
-        self.all_head_size = self.num_attention_heads * self.attention_head_size
+        self.embed_dim = config.hidden_size
+        self.num_heads = config.num_attention_heads
+        self.head_dim = int(self.embed_dim / self.num_heads)
         self.dropout_prob = config.attention_probs_dropout_prob
-        self.scaling = self.attention_head_size**-0.5
 
-        self.query = nn.Linear(config.hidden_size, self.all_head_size, bias=config.qkv_bias)
-        self.key = nn.Linear(config.hidden_size, self.all_head_size, bias=config.qkv_bias)
-        self.value = nn.Linear(config.hidden_size, self.all_head_size, bias=config.qkv_bias)
+        self.query = nn.Linear(self.embed_dim, self.embed_dim, bias=config.qkv_bias)
+        self.key = nn.Linear(self.embed_dim, self.embed_dim, bias=config.qkv_bias)
+        self.value = nn.Linear(self.embed_dim, self.embed_dim, bias=config.qkv_bias)
 
-    def forward(self, hidden_states: Tensor, **kwargs) -> Tensor:
-        batch_size = hidden_states.shape[0]
-        new_shape = batch_size, -1, self.num_attention_heads, self.attention_head_size
+    def forward(self, embeddings: Tensor) -> Tensor:
+        """
+        Performs multi-head self-attention on the input embeddings.
 
-        key_layer = self.key(hidden_states).view(*new_shape).transpose(1, 2)
-        value_layer = self.value(hidden_states).view(*new_shape).transpose(1, 2)
-        query_layer = self.query(hidden_states).view(*new_shape).transpose(1, 2)
+        Args:
+            embeddings: Input embeddings with shape (batch_size, seq_length, embed_dim).
 
-        context_layer = nn.functional.scaled_dot_product_attention(
-            query=query_layer,
-            key=key_layer,
-            value=value_layer,
-            dropout_p=self.dropout_prob if self.training else 0.0,
-        )
-        context_layer = context_layer.transpose(1, 2).contiguous()
+        Returns:
+            attention_output: Attention output with shape (batch_size, seq_length, embed_dim).
 
-        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
-        context_layer = context_layer.reshape(new_context_layer_shape)
+        """
 
-        return context_layer
+        # Get batch information
+        batch_size, seq_length, embed_dim = embeddings.shape
+
+        # Project the embeddings and reshape for multi-head attention
+        q: Tensor = self.query(embeddings)
+        k: Tensor = self.key(embeddings)
+        v: Tensor = self.value(embeddings)
+
+        q = q.view(batch_size, seq_length, self.num_heads, self.head_dim).transpose(1, 2)
+        k = k.view(batch_size, seq_length, self.num_heads, self.head_dim).transpose(1, 2)
+        v = v.view(batch_size, seq_length, self.num_heads, self.head_dim).transpose(1, 2)
+
+        # Perform attention
+        attention_output = F.scaled_dot_product_attention(q, k, v, dropout_p=self.dropout_prob if self.training else 0.0)
+
+        # Restore original shape
+        attention_output = attention_output.transpose(1, 2).contiguous()
+        attention_output = attention_output.view(batch_size, seq_length, embed_dim)
+
+        return attention_output
+
+    @take_annotation_from(forward)
+    def __call__(self, *args, **kwargs):
+        return nn.Module.__call__(self, *args, **kwargs)
 
 
 class Dinov2WithRegistersSelfOutput(nn.Module):
     """
-    The residual connection is defined in Dinov2WithRegistersLayer instead of here (as is the case with other models), due to the
-    layernorm applied before each block.
+    Output projection for self-attention.
+
+    Args:
+        hidden_size: Embedding dimension.
+        hidden_dropout_prob: Dropout probability for the output.
     """
 
-    def __init__(self, config: Dinov2WithRegistersConfig):
+    def __init__(self, config: Dinov2WithRegistersConfig) -> None:
         super().__init__()
-        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
-    def forward(self, hidden_states: Tensor, input_tensor: Tensor) -> Tensor:
-        hidden_states = self.dense(hidden_states)
-        hidden_states = self.dropout(hidden_states)
-        return hidden_states
+        self.embed_dim = config.hidden_size
+        self.dropout_prob = config.hidden_dropout_prob
+
+        self.dense = nn.Linear(self.embed_dim, self.embed_dim)
+        self.dropout = nn.Dropout(self.dropout_prob)
+
+    def forward(self, embeddings: Tensor) -> Tensor:
+        """
+        Project the output of self-attention and apply dropout.
+
+        Args:
+            embeddings: Input embeddings with shape (batch_size, seq_length, embed_dim).
+
+        Returns:
+            output: Output embeddings with shape (batch_size, seq_length, embed_dim).
+        """
+
+        embeddings = self.dropout(self.dense(embeddings))
+
+        return embeddings
+
+    @take_annotation_from(forward)
+    def __call__(self, *args, **kwargs):
+        return nn.Module.__call__(self, *args, **kwargs)
 
 
 class Dinov2WithRegistersAttention(nn.Module):
+    """
+    Wrapper for the attention mechanism.
+
+    This is really dumb but it's how huggingface implemented it ¯\(ツ)/¯
+
+    Args:
+        config: Configuration object containing model hyperparameters.
+    """
+
     def __init__(self, config: Dinov2WithRegistersConfig):
         super().__init__()
+
         self.attention = Dinov2WithRegistersSelfAttention(config)
         self.output = Dinov2WithRegistersSelfOutput(config)
 
-    def forward(self, hidden_states: Tensor, **kwargs) -> Tensor:
-        self_attn_output = self.attention(hidden_states, **kwargs)
-        output = self.output(self_attn_output, hidden_states)
+    def forward(self, embeddings: Tensor) -> Tensor:
+        """
+        Perform attention and project the output.
+
+        Args:
+            embeddings: Input embeddings with shape (batch_size, seq_length, embed_dim).
+
+        Returns:
+            output: Output embeddings with shape (batch_size, seq_length, embed_dim).
+        """
+
+        output = self.output(self.attention(embeddings))
+
         return output
+
+    @take_annotation_from(forward)
+    def __call__(self, *args, **kwargs):
+        return nn.Module.__call__(self, *args, **kwargs)
 
 
 class Dinov2WithRegistersLayerScale(nn.Module):
+    """
+    Layer scale module for scaling the output of attention and MLP layers.
+
+    Args:
+        hidden_size: Embedding dimension.
+        layerscale_value: Initial value for the layer scale parameters.
+    """
+
     def __init__(self, config: Dinov2WithRegistersConfig) -> None:
         super().__init__()
-        self.lambda1 = nn.Parameter(config.layerscale_value * torch.ones(config.hidden_size))
 
-    def forward(self, hidden_state: Tensor) -> Tensor:
-        return hidden_state * self.lambda1
+        self.embed_dim = config.hidden_size
+        self.value = config.layerscale_value
 
+        self.lambda1 = nn.Parameter(self.value * torch.ones(self.embed_dim))
 
-def drop_path(input: Tensor, drop_prob: float = 0.0, training: bool = False) -> Tensor:
-    """
-    Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
+    def forward(self, embeddings: Tensor) -> Tensor:
+        """
+        Scale the input embeddings.
 
-    """
-    if drop_prob == 0.0 or not training:
-        return input
-    keep_prob = 1 - drop_prob
-    shape = (input.shape[0],) + (1,) * (input.ndim - 1)  # work with diff dim tensors, not just 2D ConvNets
-    random_tensor = keep_prob + torch.rand(shape, dtype=input.dtype, device=input.device)
-    random_tensor.floor_()  # binarize
-    output = input.div(keep_prob) * random_tensor
-    return output
+        Args:
+            embeddings: Input embeddings with shape (batch_size, seq_length, embed_dim).
+
+        Returns:
+            output: Scaled embeddings with shape (batch_size, seq_length, embed_dim).
+        """
+
+        return embeddings * self.lambda1
+
+    @take_annotation_from(forward)
+    def __call__(self, *args, **kwargs):
+        return nn.Module.__call__(self, *args, **kwargs)
 
 
 class Dinov2WithRegistersDropPath(nn.Module):
-    """Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks)."""
+    """
+    Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
+
+    Args:
+        drop_prob: The probability of dropping paths, optional.
+    """
 
     def __init__(self, drop_prob: float | None = None) -> None:
         super().__init__()
-        self.drop_prob = drop_prob
 
-    def forward(self, hidden_states: Tensor) -> Tensor:
-        return drop_path(hidden_states, self.drop_prob, self.training)
+        self.drop_prob = drop_prob if drop_prob is not None else 0.0
+        self.keep_prob = 1 - self.drop_prob
 
-    def extra_repr(self) -> str:
-        return f"p={self.drop_prob}"
+    def forward(self, embeddings: Tensor) -> Tensor:
+        """
+        Apply drop path to the embeddings.
+
+        Args:
+            embeddings: Embeddings with shape (batch_size, ...).
+
+        Returns:
+            embeddings: Embeddings after applying drop path, with shape (batch_size, ...).
+        """
+
+        if self.drop_prob == 0.0 or not self.training:
+            return embeddings
+
+        # Generate a mask for the batch elements (efficient version of torch.bernoulli(self.keep_prob))
+        shape = (embeddings.shape[0],) + (1,) * (embeddings.ndim - 1)
+        random_tensor = self.keep_prob + torch.rand(shape, dtype=embeddings.dtype, device=embeddings.device)
+        random_tensor.floor_()
+
+        # Apply the mask and scale the embeddings to maintain the expected value
+        embeddings = embeddings.div(self.keep_prob) * random_tensor
+
+        return embeddings
+
+    @take_annotation_from(forward)
+    def __call__(self, *args, **kwargs):
+        return nn.Module.__call__(self, *args, **kwargs)
 
 
 class Dinov2WithRegistersMLP(nn.Module):
+    """
+    Standard feedforward network with one hidden layer and an activation function.
+
+    Args:
+        hidden_size: Embedding dimension.
+        mlp_ratio: Ratio of the hidden layer dimension to the embedding dimension.
+        hidden_act: Activation function to use, either as a string or a callable.
+    """
+
     def __init__(self, config: Dinov2WithRegistersConfig) -> None:
         super().__init__()
+
         in_features = out_features = config.hidden_size
         hidden_features = int(config.hidden_size * config.mlp_ratio)
+
         self.fc1 = nn.Linear(in_features, hidden_features, bias=True)
-        if isinstance(config.hidden_act, str):
-            self.activation = nn.GELU()
-        else:
-            self.activation = config.hidden_act
+        self.activation = nn.GELU() if isinstance(config.hidden_act, str) else config.hidden_act
         self.fc2 = nn.Linear(hidden_features, out_features, bias=True)
 
-    def forward(self, hidden_state: Tensor) -> Tensor:
-        hidden_state = self.fc1(hidden_state)
-        hidden_state = self.activation(hidden_state)
-        hidden_state = self.fc2(hidden_state)
-        return hidden_state
+    def forward(self, embeddings: Tensor) -> Tensor:
+        """
+        Apply the feedforward network to the input embeddings.
+
+        Args:
+            embeddings: Input embeddings with shape (batch_size, seq_length, embed_dim).
+
+        Returns:
+            embeddings: Output embeddings with shape (batch_size, seq_length, embed_dim).
+        """
+
+        embeddings = self.fc2(self.activation(self.fc1(embeddings)))
+
+        return embeddings
+
+    @take_annotation_from(forward)
+    def __call__(self, *args, **kwargs):
+        return nn.Module.__call__(self, *args, **kwargs)
 
 
 class Dinov2WithRegistersSwiGLUFFN(nn.Module):
+    """
+    SwiGLU feedforward network with one hidden layer.
+
+    Args:
+        hidden_size: Embedding dimension.
+        mlp_ratio: Ratio of the hidden layer dimension to the embedding dimension.
+    """
+
     def __init__(self, config: Dinov2WithRegistersConfig) -> None:
         super().__init__()
+
         in_features = out_features = config.hidden_size
         hidden_features = int(config.hidden_size * config.mlp_ratio)
         hidden_features = (int(hidden_features * 2 / 3) + 7) // 8 * 8
@@ -279,58 +454,75 @@ class Dinov2WithRegistersSwiGLUFFN(nn.Module):
         self.weights_in = nn.Linear(in_features, 2 * hidden_features, bias=True)
         self.weights_out = nn.Linear(hidden_features, out_features, bias=True)
 
-    def forward(self, hidden_state: Tensor) -> Tensor:
-        hidden_state = self.weights_in(hidden_state)
-        x1, x2 = hidden_state.chunk(2, dim=-1)
-        hidden = nn.functional.silu(x1) * x2
-        return self.weights_out(hidden)
+    def forward(self, embeddings: Tensor) -> Tensor:
+        """
+        Apply the SwiGLU feedforward network to the input embeddings.
+
+        Args:
+            embeddings: Input embeddings with shape (batch_size, seq_length, embed_dim).
+
+        Returns:
+            embeddings: Output embeddings with shape (batch_size, seq_length, embed_dim).
+        """
+        embeddings = self.weights_in(embeddings)
+
+        gate, signal = embeddings.chunk(2, dim=-1)
+
+        embeddings = F.silu(gate) * signal
+
+        return self.weights_out(embeddings)
+
+    @take_annotation_from(forward)
+    def __call__(self, *args, **kwargs):
+        return nn.Module.__call__(self, *args, **kwargs)
 
 
 class Dinov2WithRegistersLayer(nn.Module):
-    """This corresponds to the Block class in the original implementation."""
+    """
+    Single layer of the backbone, consisting of self-attention and a feedforward network.
+
+    Args:
+        config: Configuration object containing model hyperparameters.
+    """
 
     def __init__(self, config: Dinov2WithRegistersConfig) -> None:
         super().__init__()
 
+        # Self-attention
         self.norm1 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.attention = Dinov2WithRegistersAttention(config)
         self.layer_scale1 = Dinov2WithRegistersLayerScale(config)
         self.drop_path = Dinov2WithRegistersDropPath(config.drop_path_rate) if config.drop_path_rate > 0.0 else nn.Identity()
 
+        # Feedforward network
         self.norm2 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-
-        if config.use_swiglu_ffn:
-            self.mlp = Dinov2WithRegistersSwiGLUFFN(config)
-        else:
-            self.mlp = Dinov2WithRegistersMLP(config)
+        self.mlp = Dinov2WithRegistersSwiGLUFFN(config) if config.use_swiglu_ffn else Dinov2WithRegistersMLP(config)
         self.layer_scale2 = Dinov2WithRegistersLayerScale(config)
 
-    def forward(
-        self,
-        hidden_states: Tensor,
-    ) -> Tensor:
-        hidden_states_norm = self.norm1(hidden_states)
-        self_attention_output = self.attention(hidden_states_norm)
-        self_attention_output = self.layer_scale1(self_attention_output)
+    def forward(self, embeddings: Tensor) -> Tensor:
+        """
+        Forward pass for a single layer of the backbone.
 
-        # first residual connection
-        hidden_states = self.drop_path(self_attention_output) + hidden_states
+        Args:
+            embeddings: Input embeddings with shape (batch_size, seq_length, embed_dim).
 
-        # in Dinov2WithRegisters, layernorm is also applied after self-attention
-        layer_output = self.norm2(hidden_states)
-        layer_output = self.mlp(layer_output)
-        layer_output = self.layer_scale2(layer_output)
+        Returns:
+            embeddings: Output embeddings with shape (batch_size, seq_length, embed_dim).
+        """
 
-        # second residual connection
-        layer_output = self.drop_path(layer_output) + hidden_states
+        # Self-attention
+        embeddings = embeddings + self.drop_path(self.layer_scale1(self.attention(self.norm1(embeddings))))
 
-        return layer_output
+        # Feedforward network
+        embeddings = embeddings + self.drop_path(self.layer_scale2(self.mlp(self.norm2(embeddings))))
+
+        return embeddings
 
 
 class Dinov2WithRegistersPreTrainedModel(nn.Module):
     config: Dinov2WithRegistersConfig
     base_model_prefix = "dinov2_with_registers"
-    main_input_name = "pixel_values"
+    main_input_name = "images"
     input_modalities = ("image",)
     supports_gradient_checkpointing = True
     _no_split_modules = ["Dinov2WithRegistersLayer"]
@@ -339,12 +531,18 @@ class Dinov2WithRegistersPreTrainedModel(nn.Module):
     _supports_flex_attn = True
     _supports_attention_backend = True
     _can_record_outputs = {
-        "hidden_states": Dinov2WithRegistersLayer,
+        "embeddings": Dinov2WithRegistersLayer,
     }
 
     @torch.no_grad()
-    def _init_weights(self, module: nn.Linear | nn.Conv2d | nn.LayerNorm) -> None:
-        """Initialize the weights"""
+    def _init_weights(self, module: nn.Module) -> None:
+        """
+        Initialize the module weights.
+
+        Args:
+            module: Module to initialize.
+        """
+
         if isinstance(module, (nn.Linear, nn.Conv2d)):
             nn.init.trunc_normal_(module.weight, mean=0.0, std=self.config.initializer_range)
             if module.bias is not None:
@@ -361,42 +559,86 @@ class Dinov2WithRegistersPreTrainedModel(nn.Module):
 
 
 class Dinov2WithRegistersEncoder(Dinov2WithRegistersPreTrainedModel):
+    """
+    Sequential encoder made up of multiple layers.
+
+    Args:
+        config: Configuration object containing model hyperparameters.
+        out_feature_indices: Layer indices to output features from.
+        window_layer_indices: Layer indices to apply windowed attention to (if num_windows > 1).
+        num_windows: Number of windows to use for windowed attention, optional.
+    """
+
     def __init__(
         self,
         config: Dinov2WithRegistersConfig,
         out_feature_indices: List[int],
         window_layer_indices: List[int],
         num_windows: int = 1,
-    ):
+    ) -> None:
         super().__init__()
-        self.layer = nn.ModuleList([Dinov2WithRegistersLayer(config) for _ in range(config.num_hidden_layers)])
+
         self.out_feature_indices = out_feature_indices
         self.window_layer_indices = window_layer_indices
         self.num_windows = num_windows
 
-    def forward(self, hidden_states: Tensor, **kwargs) -> List[Tensor]:
+        self.layer = nn.ModuleList([Dinov2WithRegistersLayer(config) for _ in range(config.num_hidden_layers)])
+
+    def forward(self, embeddings: Tensor) -> List[Tensor]:
+        """
+        Forward pass through the encoder layers.
+
+        Args:
+            embeddings: Input embeddings with shape (batch_size, seq_length, embed_dim).
+
+        Returns:
+            features: Features from the specified layers, each with shape (batch_size, seq_length, embed_dim).
+        """
+
+        # Get batch information
+        windowed_batch_size, _, embed_dim = embeddings.shape
+        batch_size = windowed_batch_size // (self.num_windows**2)
+
         features = []
+
         for i, layer_module in enumerate(self.layer):
-            if self.num_windows > 1 and i not in self.window_layer_indices:
-                B_win, L_win, D = hidden_states.shape
-                B = B_win // (self.num_windows**2)
-                hidden_states = hidden_states.view(B, -1, D)
+            # If windowed attention is enabled and this layer is designated for global attention,
+            # restore the original batch size by bringing the windows out of the batch dimension
+            reshape_for_global_attention = self.num_windows > 1 and i not in self.window_layer_indices
 
-            hidden_states = layer_module(hidden_states)
+            if reshape_for_global_attention:
+                embeddings = embeddings.view(batch_size, -1, embed_dim)
 
-            if self.num_windows > 1 and i not in self.window_layer_indices:
-                hidden_states = hidden_states.view(B_win, L_win, D)
+            embeddings = layer_module(embeddings)
+
+            # Restore windowed batch size if we reshaped for global attention at the start of the layer
+            if reshape_for_global_attention:
+                embeddings = embeddings.view(windowed_batch_size, -1, embed_dim)
 
             if i in self.out_feature_indices:
-                features.append(hidden_states)
+                features.append(embeddings)
 
         return features
 
 
 class Dinov2WithRegistersModel(Dinov2WithRegistersPreTrainedModel):
+    """
+    DINOv2 backbone model with register tokens and optional windowed attention.
+
+    Args:
+        name: Name of the model on HuggingFace.
+        image_size: Size of the input images, interpreted as (image_size, image_size) if a single integer is provided.
+        patch_size: Size of the patches, interpreted as (patch_size, patch_size) if a single integer is provided.
+        out_feature_indices: Layer indices to output features from, optional.
+        window_layer_indices: Layer indices to apply windowed attention to (if num_windows > 1), optional.
+        num_windows: Number of windows to use for windowed attention, optional.
+    """
+
     def __init__(
         self,
         name: str,
+        image_size: int | Tuple[int, int],
+        patch_size: int | Tuple[int, int],
         out_feature_indices: List[int] | None = None,
         window_layer_indices: List[int] | None = None,
         num_windows: int = 1,
@@ -406,8 +648,8 @@ class Dinov2WithRegistersModel(Dinov2WithRegistersPreTrainedModel):
         super().__init__()
 
         config = Dinov2WithRegistersConfig.from_pretrained(name)
-        config.image_size = 512
-        config.patch_size = 16
+        config.image_size = image_size
+        config.patch_size = patch_size
 
         self.config = config
         self.out_feature_indices = out_feature_indices if out_feature_indices is not None else [config.num_hidden_layers - 1]
@@ -415,70 +657,121 @@ class Dinov2WithRegistersModel(Dinov2WithRegistersPreTrainedModel):
         self.num_windows = num_windows
 
         self.embeddings = Dinov2WithRegistersEmbeddings(config)
-        self.encoder = Dinov2WithRegistersEncoder(
-            config,
-            out_feature_indices=self.out_feature_indices,
-            window_layer_indices=self.window_layer_indices,
-            num_windows=self.num_windows,
-        )
-
+        self.encoder = Dinov2WithRegistersEncoder(config, self.out_feature_indices, self.window_layer_indices, self.num_windows)
         self.layernorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
         self._initialize_weights(name, pretrained=pretrained)
 
-    def forward(self, images: Tensor, **kwargs) -> List[Tensor]:
-
-        embedding_output = self.embeddings(images)
-
+    def forward(self, images: Tensor) -> List[Tensor]:
+        # Get batch information
         batch_size, _, height, width = images.shape
         num_patches_height = height // self.config.patch_size
         num_patches_width = width // self.config.patch_size
 
-        if self.num_windows > 1:
-            num_special_tokens = 1 + self.config.num_register_tokens
-            special_tokens = embedding_output[:, :num_special_tokens, :]
-            patch_tokens = embedding_output[:, num_special_tokens:, :]
+        # Create initial embeddings
+        embeddings = self.embeddings(images)
 
-            patch_tokens = patch_tokens.view(batch_size, num_patches_height, num_patches_width, self.config.hidden_size)
-            wh, ww = num_patches_height // self.num_windows, num_patches_width // self.num_windows
+        # Optionally, window the embeddings
+        embeddings = self._window_embeddings(embeddings, num_patches_height, num_patches_width)
 
-            patch_tokens = patch_tokens.view(batch_size, self.num_windows, wh, self.num_windows, ww, self.config.hidden_size)
-            patch_tokens = patch_tokens.permute(0, 1, 3, 2, 4, 5).contiguous()
-            patch_tokens = patch_tokens.view(batch_size * self.num_windows**2, wh * ww, self.config.hidden_size)
+        # Encoder forward pass
+        encoder_features = self.encoder(embeddings)
 
-            special_tokens = special_tokens.unsqueeze(1).expand(
-                batch_size, self.num_windows**2, num_special_tokens, self.config.hidden_size
-            )
-            special_tokens = special_tokens.reshape(batch_size * self.num_windows**2, num_special_tokens, self.config.hidden_size)
-
-            embedding_output = torch.cat([special_tokens, patch_tokens], dim=1)
-
-        encoder_outputs = self.encoder(embedding_output, **kwargs)
-
+        # Apply layer norm and restore spatial dimensions, optionally unwindowing the features
         output_features = []
+        for encoder_feature in encoder_features:
+            # Remove CLS and register tokens
+            patch_tokens = encoder_feature[:, 1 + self.config.num_register_tokens :]
 
-        for sequence_output in encoder_outputs:
-            sequence_output = self.layernorm(sequence_output)
+            # Normalize the features
+            patch_tokens = self.layernorm(patch_tokens)
 
-            if self.num_windows > 1:
-                num_special_tokens = 1 + self.config.num_register_tokens
-                patch_tokens = sequence_output[:, num_special_tokens:, :]
-                wh, ww = num_patches_height // self.num_windows, num_patches_width // self.num_windows
+            # Unwindow the features if they were windowed
+            patch_tokens = self._unwindow_patch_tokens(patch_tokens, num_patches_height, num_patches_width)
 
-                patch_tokens = patch_tokens.view(batch_size, self.num_windows, self.num_windows, wh, ww, self.config.hidden_size)
-                patch_tokens = patch_tokens.permute(0, 1, 3, 2, 4, 5).contiguous()
-                feature = patch_tokens.view(batch_size, num_patches_height, num_patches_width, self.config.hidden_size)
-                feature = feature.permute(0, 3, 1, 2)
-                output_features.append(feature)
-            else:
-                # Remove CLS (0) and registers (1:1+num_register_tokens)
-                start_idx = 1 + self.config.num_register_tokens
-                patch_tokens = sequence_output[:, start_idx:, :]
-                # Reshape to (batch_size, channels, height, width)
-                feature = patch_tokens.transpose(1, 2).reshape(batch_size, self.config.hidden_size, num_patches_height, num_patches_width)
-                output_features.append(feature)
+            # Restore the spatial dimensions and move channels to the correct position
+            patch_tokens = patch_tokens.view(batch_size, num_patches_height, num_patches_width, self.config.hidden_size)
+            patch_tokens = patch_tokens.permute(0, 3, 1, 2)
+
+            output_features.append(patch_tokens)
 
         return output_features
+
+    def _window_embeddings(self, embeddings: Tensor, num_patches_height: int, num_patches_width: int) -> Tensor:
+        """
+        Apply windowing to the embeddings for efficient attention.
+
+        Args:
+            embeddings: Input embeddings with shape (batch_size, seq_length, embed_dim).
+            num_patches_height: Number of patches along the height dimension.
+            num_patches_width: Number of patches along the width dimension.
+
+        Returns:
+            embeddings: Windowed embeddings with shape (batch_size * num_windows^2, window_seq_length, embed_dim).
+        """
+
+        # No-op if windowing is disabled
+        if self.num_windows == 1:
+            return embeddings
+
+        # Get batch information
+        batch_size, _, embed_dim = embeddings.shape
+        num_special_tokens = 1 + self.config.num_register_tokens
+        num_windows_height = num_patches_height // self.num_windows
+        num_windows_width = num_patches_width // self.num_windows
+
+        # Separate special and patch tokens
+        special_tokens, patch_tokens = embeddings[:, :num_special_tokens], embeddings[:, num_special_tokens:]
+
+        # Restore patch dimensions
+        patch_tokens = patch_tokens.view(batch_size, num_patches_height, num_patches_width, embed_dim)
+
+        # Separate windows
+        patch_tokens = patch_tokens.view(batch_size, self.num_windows, num_windows_height, self.num_windows, num_windows_width, embed_dim)
+
+        # Move windows into the batch dimension and flatten spatial dimensions
+        patch_tokens = patch_tokens.permute(0, 1, 3, 2, 4, 5).contiguous()
+        patch_tokens = patch_tokens.view(batch_size * self.num_windows**2, num_windows_height * num_windows_width, self.config.hidden_size)
+
+        # Repeat special tokens for each window
+        special_tokens = special_tokens.unsqueeze(1).expand(batch_size, self.num_windows**2, num_special_tokens, self.config.hidden_size)
+        special_tokens = special_tokens.reshape(batch_size * self.num_windows**2, num_special_tokens, self.config.hidden_size)
+
+        embeddings = torch.cat([special_tokens, patch_tokens], dim=1)
+
+        return embeddings
+
+    def _unwindow_patch_tokens(self, patch_tokens: Tensor, num_patches_height: int, num_patches_width: int) -> Tensor:
+        """
+        Restore the original batch size and spatial dimensions for the patch tokens after windowed attention.
+
+        Args:
+            patch_tokens: Windowed patch tokens with shape (batch_size * num_windows^2, window_seq_length, embed_dim).
+            num_patches_height: Number of patches along the height dimension.
+            num_patches_width: Number of patches along the width dimension.
+
+        Returns:
+            patch_tokens: Unwindowed patch tokens with shape (batch_size, num_patches, embed_dim).
+        """
+
+        # No-op if windowing is disabled
+        if self.num_windows == 1:
+            return patch_tokens
+
+        # Get batch information
+        windowed_batch_size, _, embed_dim = patch_tokens.shape
+        batch_size = windowed_batch_size // (self.num_windows**2)
+        num_windows_height = num_patches_height // self.num_windows
+        num_windows_width = num_patches_width // self.num_windows
+
+        # Bring the windows out of the batch dimension
+        patch_tokens = patch_tokens.view(batch_size, self.num_windows, self.num_windows, num_windows_height, num_windows_width, embed_dim)
+        patch_tokens = patch_tokens.permute(0, 1, 3, 2, 4, 5).contiguous()
+
+        # Restore original spatial dimensions
+        patch_tokens = patch_tokens.view(batch_size, -1, self.config.hidden_size)
+
+        return patch_tokens
 
     @torch.no_grad()
     def _initialize_weights(self, name: str, *, pretrained: bool = True) -> None:
@@ -563,6 +856,10 @@ class Dinov2WithRegistersModel(Dinov2WithRegistersPreTrainedModel):
 
         if incompatible.unexpected_keys:
             logging.warning(f"Unexpected keys when loading backbone pretrained weights: {incompatible.unexpected_keys}")
+
+    @take_annotation_from(forward)
+    def __call__(self, *args, **kwargs):
+        return nn.Module.__call__(self, *args, **kwargs)
 
 
 __all__ = [
