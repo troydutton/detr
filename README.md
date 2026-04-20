@@ -50,8 +50,8 @@ python src/export.py --config-name <config-name> model.pretrained_weights=<path-
 ```
 
 ## Benchmarking
-To benchmark a model, use the `benchmark.py` script.
+To benchmark a model, first export the model as described above, then use `trtexec` to run inference.
 
 ```bash
-python src/benchmark.py --config-name <config-name> <additional-args>
+trtexec --onnx=<path-to-onnx> --memPoolSize=workspace:4096 --fp16 --useCudaGraph --useSpinWait --warmUp=500 --avgRuns=1000 --duration=10
 ```
