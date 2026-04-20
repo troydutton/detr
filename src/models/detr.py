@@ -6,14 +6,13 @@ from typing import List, Optional, Tuple, Union
 import torch
 from safetensors.torch import load_file
 from torch import Tensor, nn
-from torchvision.ops import nms
-from torchvision.ops.boxes import box_convert
 
 from data.coco_dataset import Target
 from models.backbone import Backbone
 from models.decoder import TransformerDecoder
 from models.encoder import TransformerEncoder
 from utils.misc import take_annotation_from
+from utils.postprocess import Detections, postprocess
 
 VALID_WEIGHT_FILES = ["ema_model.safetensors", "model.safetensors"]
 
@@ -22,14 +21,6 @@ VALID_WEIGHT_FILES = ["ema_model.safetensors", "model.safetensors"]
 class Predictions:
     boxes: Tensor
     logits: Tensor
-
-
-@dataclass
-class Detections:
-    boxes: Tensor
-    labels: Tensor
-    scores: Tensor
-    categories: Optional[List[str]] = None
 
 
 class DETR(nn.Module):
@@ -115,8 +106,8 @@ class DETR(nn.Module):
             export: Whether to return raw predictions for ONNX export.
 
         Returns:
-            detections: A detection for every image, containg the `boxes`, `labels`, and `scores` for the predicted objects.
-                Alternatively, returns the raw `boxes` and `logits` tensors for ONNX export.
+            detections: A list of `Detections` for each image in the batch, containing the filtered `boxes`, `labels`, `scores`, and optionally `categories`.
+                Alternatively, returns the raw `boxes` and `logits` predictions for ONNX export.
         """
 
         # Extract image features
@@ -137,26 +128,7 @@ class DETR(nn.Module):
             return boxes, logits
 
         # Filter predictions
-        scores, labels = logits.sigmoid().max(dim=-1)
-
-        detections = []
-        for image_boxes, image_labels, image_scores in zip(boxes, labels, scores):
-            # Apply confidence thresholding
-            keep = image_scores > confidence_threshold
-            image_boxes, image_scores, image_labels = image_boxes[keep], image_scores[keep], image_labels[keep]
-
-            # Apply non-maximum suppression
-            keep = nms(box_convert(image_boxes, "cxcywh", "xyxy"), image_scores, iou_threshold)
-            image_boxes, image_scores, image_labels = image_boxes[keep], image_scores[keep], image_labels[keep]
-
-            if self.categories is not None:
-                image_categories = [self.categories[label] for label in image_labels]
-            else:
-                image_categories = None
-
-            detections.append(Detections(image_boxes, image_labels, image_scores, image_categories))
-
-        return detections
+        return postprocess(boxes, logits, confidence_threshold, iou_threshold, self.categories)
 
     @torch.no_grad()
     def _initialize_weights(self, pretrained_weights: Union[str, Path] = None) -> None:
