@@ -1,9 +1,11 @@
+import json
 import logging
 import warnings
 from pathlib import Path
 from typing import Any, Dict, Union
 
 import hydra
+import onnx
 import torch
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
@@ -14,7 +16,7 @@ from models import DETR
 Args = Dict[str, Union[Any, "Args"]]
 
 
-@hydra.main(config_path="../configs", config_name="detr", version_base=None)
+@hydra.main(config_path="../configs", config_name="export", version_base=None)
 def main(args: DictConfig) -> None:
     # Resolve arguments
     args: Args = OmegaConf.to_container(args, resolve=True, throw_on_missing=True)
@@ -42,17 +44,11 @@ def main(args: DictConfig) -> None:
     model.forward = lambda x: model.predict(x, export=True)
 
     # Create output directory and path
-    output_dir = Path(args["train"]["output_dir"]) / "onnx"
+    output_dir = Path(args["output_dir"]) / "onnx"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{output_dir.parent.name}.onnx"
 
     logging.info(f"Exporting model to '{output_path}'.")
-
-    # Determine opset version, notifying the user if not specified
-    opset_version = args.get("opset_version", 18)
-
-    if "opset_version" not in args:
-        logging.info(f"No opset version specified, defaulting to {opset_version}. Specify with +opset_version=<version>.")
 
     # Suppress ONNX warnings
     warnings.filterwarnings("ignore", category=FutureWarning, module="copyreg")
@@ -68,12 +64,17 @@ def main(args: DictConfig) -> None:
         image,
         output_path,
         export_params=True,
-        opset_version=opset_version,
+        opset_version=args["opset_version"],
         do_constant_folding=True,
         input_names=["images"],
         output_names=["boxes", "logits"],
         verbose=False,
     )
+
+    # Add categories as custom metadata
+    onnx_model = onnx.load(output_path)
+    onnx.helper.set_model_props(onnx_model, {"categories": json.dumps(val_dataset.get_categories())})
+    onnx.save(onnx_model, output_path)
 
     logging.info(f"Exported model to '{output_path}'.")
 

@@ -1,0 +1,12 @@
+defaults:
+  - hydra: logging
+  - dataset: coco
+  - transforms: small
+  - model: small
+  - _self_
+
+model:
+  pretrained_weights: /path/to/pretrained/weights
+
+output_dir: /path/to/output/dir
+opset_version: 18

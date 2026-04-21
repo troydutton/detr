@@ -101,7 +101,7 @@ def test_export(tmp_path: Path, dummy_coco: Path) -> None:
                 },
                 "pretrained_weights": None,
             },
-            "train": {"output_dir": str(output_dir)},
+            "output_dir": str(output_dir),
             "opset_version": 18,
         }
     )
