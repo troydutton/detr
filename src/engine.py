@@ -102,7 +102,7 @@ def train(
         # Save the model weights
         if (epoch + 1) % save_period == 0 or (epoch + 1) == num_epochs:
             checkpoint_dir = Path(output_dir) / f"{epoch + 1}"
-            save_checkpoint(accelerator, checkpoint_dir, ema_model=ema_model)
+            save_checkpoint(accelerator, checkpoint_dir, model, ema_model)
 
         torch.cuda.empty_cache()
 

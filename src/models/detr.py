@@ -4,13 +4,13 @@ from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 import torch
-from safetensors.torch import load_file
 from torch import Tensor, nn
 
 from data.coco_dataset import Target
 from models.backbone import Backbone
 from models.decoder import TransformerDecoder
 from models.encoder import TransformerEncoder
+from utils.checkpoint import load_state_dict
 from utils.misc import take_annotation_from
 from utils.postprocess import Detections, postprocess
 
@@ -147,48 +147,21 @@ class DETR(nn.Module):
         if pretrained_weights is None:
             return
 
-        pretrained_weights = Path(pretrained_weights)
-
-        # Attempt to find the model weights in an accelerate checkpoint if a directory is provided
-        if pretrained_weights.is_dir():
-
-            def find_weight_file(directory: Path) -> Optional[Path]:
-                for file in VALID_WEIGHT_FILES:
-                    if (directory / file).exists():
-                        return directory / file
-                return None
-
-            weight_path = find_weight_file(pretrained_weights)
-
-            if weight_path is None:
-                # Weights point to a parent folder containing multiple checkpoint folders
-                checkpoints = sorted(d for d in pretrained_weights.iterdir() if d.is_dir() and find_weight_file(d) is not None)
-
-                if not checkpoints:
-                    raise FileNotFoundError(f"No checkpoint directories containing model weights found in '{pretrained_weights}'.")
-
-                weight_path = find_weight_file(checkpoints[-1])
-
-            pretrained_weights = weight_path
-
-        logging.info(f"Loading pretrained weights from '{pretrained_weights}'.")
-
-        if pretrained_weights.suffix in [".pt", ".pth"]:
-            state_dict = torch.load(pretrained_weights, map_location="cpu")
-        elif pretrained_weights.suffix == ".safetensors":
-            state_dict = load_file(pretrained_weights, device="cpu")
-        else:
-            raise ValueError(f"Unsupported pretrained weights format: {pretrained_weights}")
-
-        # Strip module prefix and EMA metadata if present
-        state_dict = {k.removeprefix("module."): v for k, v in state_dict.items() if k != "n_averaged"}
+        # Load the pretrained weights
+        state_dict = load_state_dict(pretrained_weights)
 
         # During inference we use a single query group
-        if len(self.decoder.queries.weight) < len(state_dict["decoder.queries.weight"]):
+        current_num_queries = len(self.decoder.queries.weight)
+        pretrained_num_queries = len(state_dict["decoder.queries.weight"])
+        if current_num_queries < pretrained_num_queries:
+            logging.info(f"Reducing the number of queries from {pretrained_num_queries} to {current_num_queries}.")
             state_dict["decoder.queries.weight"] = state_dict["decoder.queries.weight"][: len(self.decoder.queries.weight)]
 
         # When changing datasets during training the number of classes may differ
-        if len(self.decoder.class_head.weight) != len(state_dict["decoder.class_head.weight"]):
+        current_num_classes = len(self.decoder.class_head.weight)
+        pretrained_num_classes = len(state_dict["decoder.class_head.weight"])
+        if current_num_classes != pretrained_num_classes:
+            logging.info(f"Removing class head weights, got {pretrained_num_classes} for num classes but expected {current_num_classes}.")
             for key in list(state_dict.keys()):
                 if "class_head" in key or "label_embed" in key:
                     state_dict.pop(key)
