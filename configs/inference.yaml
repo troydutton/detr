@@ -1,6 +1,5 @@
 defaults:
   - hydra: logging
-  - dataset: coco
   - transforms: small
   - model: small
   - _self_
