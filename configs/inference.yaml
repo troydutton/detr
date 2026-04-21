@@ -1,0 +1,18 @@
+defaults:
+  - hydra: logging
+  - dataset: coco
+  - transforms: small
+  - model: small
+  - _self_
+
+model:
+  pretrained_weights: /path/to/pretrained/weights
+
+input_dir: /path/to/input/dir
+output_dir: /path/to/output/dir
+confidence_threshold: 0.5
+iou_threshold: 0.5
+make_video: True
+fps: 30
+batch_size: 8
+num_workers: 4

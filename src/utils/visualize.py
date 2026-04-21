@@ -1,4 +1,4 @@
-import random
+from hashlib import md5
 from typing import Dict, List, Tuple
 
 import torch
@@ -46,8 +46,7 @@ def draw_annotations(
         boxes = boxes.clone() * torch.tensor([width, height, width, height])
 
     # Generate random colors if no color map is provided
-    if color_map is None:
-        color_map = {label: tuple(random.randint(0, 255) for _ in range(3)) for label in set(labels)}
+    color_map = make_color_map(labels) if color_map is None else color_map
 
     for i in range(len(boxes)):
         box = boxes[i]
@@ -73,3 +72,22 @@ def draw_annotations(
         draw.text((box[0], box[1] - text_h), text, fill=(255, 255, 255), font=font)
 
     return image
+
+
+def make_color_map(labels: List[str]) -> Dict[str, Tuple[float, float, float]]:
+    """
+    Generates a color map for a list of labels.
+
+    Args:
+        labels: List of class labels.
+
+    Returns:
+        colors: Mapping from label to RGB color tuple.
+    """
+
+    color_map = {}
+    for label in set(labels):
+        hash = md5(label.encode()).digest()
+        color_map[label] = (int(hash[0]), int(hash[1]), int(hash[2]))
+
+    return color_map
