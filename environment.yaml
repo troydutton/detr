@@ -21,6 +21,8 @@ dependencies:
   - transformers
   - timm
   - fvcore
+  - imageio
+  - imageio-ffmpeg
   - iopath
   - onnx==1.21.0
   - wandb
