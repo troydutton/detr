@@ -21,7 +21,7 @@ RED = "\033[91m"
 RESET = "\033[0m"
 
 
-@hydra.main(config_path="../configs", config_name="detr", version_base=None)
+@hydra.main(config_path="../configs", config_name="evaluate", version_base=None)
 def main(args: DictConfig) -> None:
     # Distributed setup
     accelerator = Accelerator()
@@ -36,7 +36,7 @@ def main(args: DictConfig) -> None:
     val_dataset: CocoDataset = instantiate(args["dataset"]["val"])
 
     # Create dataloader
-    batch_size, num_workers = args["train"]["batch_size"], args["train"]["num_workers"]
+    batch_size, num_workers = args["batch_size"], args["num_workers"]
     val_data = DataLoader(
         val_dataset,
         batch_size=batch_size,

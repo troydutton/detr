@@ -1,0 +1,13 @@
+defaults:
+  - hydra: logging
+  - dataset: coco
+  - transforms: small
+  - model: small
+  - criterion: set
+  - _self_
+
+model:
+  pretrained_weights: /path/to/pretrained/weights
+
+batch_size: 8
+num_workers: 4
