@@ -7,3 +7,8 @@ val:
   _target_: data.make_transformations
   split: val 
   resolution: 704
+
+test:
+  _target_: data.make_transformations
+  split: test
+  resolution: 704

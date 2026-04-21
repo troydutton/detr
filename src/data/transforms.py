@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import random
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, List, Protocol, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, List, Optional, Protocol, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 
 class Transformation(Protocol):
-    def __call__(self, image: Image.Image, annotations: Target) -> Tuple[Tensor, Target]: ...
+    def __call__(self, image: Image.Image, annotations: Optional[Target] = None) -> Tuple[Tensor, Target] | Tensor: ...
 
 
 class RandomErasingBoxAware:
@@ -178,7 +178,7 @@ def make_transformations(
     resolution = max(resolution) if isinstance(resolution, Iterable) else resolution
 
     # Sometimes we want to skip normalizaition (i.e. for visualization)
-    normalize_transform = T.Normalize(IMNET_MEAN, IMNET_STD) if normalize else T.Identity()
+    normalize_transform = make_normalize_transform(normalize)
 
     def _get_labels(sample: Tuple[Image.Image, Target]) -> List[Union[Tensor, BoundingBoxes]]:
         return [v for k, v in sample[1].items() if k in LABEL_KEYS]
@@ -199,7 +199,7 @@ def make_transformations(
             ]
         )
 
-    if split in ["val", "test"]:
+    if split == "val":
         return T.Compose(
             [
                 T.ToImage(),
@@ -211,4 +211,31 @@ def make_transformations(
             ]
         )
 
+    if split == "test":
+        return T.Compose(
+            [
+                T.ToImage(),
+                T.Resize(size=(resolution, resolution)),
+                T.ToDtype(torch.float32, scale=True),
+                normalize_transform,
+            ]
+        )
+
     raise ValueError(f"Invalid transformation split: {split}")
+
+
+def make_normalize_transform(normalize: bool = True) -> Transformation:
+    """
+    Create a normalization transform with ImageNet mean and std.
+
+    Separated because sometimes we want to delay normalization so that we can visualize
+    the images after other transformations have been applied (i.e. during inference).
+
+    Args:
+        normalize: Whether to normalize the image, optional.
+
+    Returns:
+        normalize_transform: Normalization transform.
+    """
+
+    return T.Normalize(IMNET_MEAN, IMNET_STD) if normalize else T.Identity()
