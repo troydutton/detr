@@ -92,11 +92,11 @@ def train(
 
         # Log the losses, metrics, and learning rates for this epoch
         if accelerator.is_main_process:
-            learning_rates = {group.get("name", i): group["lr"] for i, group in enumerate(optimizer.param_groups)}
+            learning_rates = {str(group["name"]).removesuffix(".no_decay"): group["lr"] for group in optimizer.param_groups}
             wandb.log({"val": {"loss": val_losses, "metric": val_metrics}, "lr": learning_rates}, step=wandb.run.step)
 
             print(f" Epoch {epoch + 1} | {timedelta(seconds=int(epoch_duration))} ".center(65, "="))
-            print(", ".join(f"{k}: {v:.2f}" for k, v in val_metrics["overall"].items()))
+            print(", ".join(f"{k}: {v * 100:.1f}" for k, v in val_metrics["overall"].items()))
             print("=" * 65)
 
         # Save the model weights

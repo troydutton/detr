@@ -89,7 +89,18 @@ def main(args: DictConfig) -> None:
     # Create optimizer (config/optimizer/*.yaml)
     lr = args["optimizer"]["lr"]
     lr_backbone = args["optimizer"].pop("lr_backbone")
-    args["optimizer"]["params"] = build_parameter_groups(model, lr=lr, lr_backbone=lr_backbone)
+    weight_decay = args["optimizer"].pop("weight_decay")
+    backbone_layer_decay = args["optimizer"].pop("backbone_layer_decay")
+    num_backbone_layers = model.backbone.feature_extractor.config.num_hidden_layers
+
+    args["optimizer"]["params"] = build_parameter_groups(
+        model,
+        lr=lr,
+        lr_backbone=lr_backbone,
+        weight_decay=weight_decay,
+        backbone_layer_decay=backbone_layer_decay,
+        num_backbone_layers=num_backbone_layers,
+    )
     optimizer: Optimizer = instantiate(args["optimizer"], _convert_="all")
 
     # Create learning rate scheduler (config/scheduler/*.yaml)
