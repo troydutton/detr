@@ -161,7 +161,7 @@ class DETR(nn.Module):
         current_num_classes = len(self.decoder.class_head.weight)
         pretrained_num_classes = len(state_dict["decoder.class_head.weight"])
         if current_num_classes != pretrained_num_classes:
-            logging.info(f"Removing class head weights, got {pretrained_num_classes} for num classes but expected {current_num_classes}.")
+            logging.info(f"Changing the number of classes from {pretrained_num_classes} to {current_num_classes}.")
             for key in list(state_dict.keys()):
                 if "class_head" in key or "label_embed" in key:
                     state_dict.pop(key)
