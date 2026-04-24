@@ -165,7 +165,8 @@ def _get_weight_path(pretrained_weights: Union[str, Path]) -> Path:
 
         # If no weight file is found, search for checkpoint subdirectories and look for weight files there
         if weight_path is None:
-            checkpoints = sorted(d for d in pretrained_weights.iterdir() if d.is_dir() and find_weight_file(d) is not None)
+            checkpoints = [d for d in pretrained_weights.iterdir() if d.is_dir() and find_weight_file(d) is not None]
+            checkpoints.sort(key=lambda d: int(d.name) if d.name.isdecimal() else 0)
 
             if not checkpoints:
                 raise FileNotFoundError(f"No checkpoint directories containing model weights found in '{pretrained_weights}'.")
