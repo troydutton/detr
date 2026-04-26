@@ -23,23 +23,25 @@ class Criterion:
     Args:
         loss_weights: Weights for loss components.
         cost_weights: Weights for cost components, optional.
-        alpha: Quality weighting parameter, optional.
-        gamma: Focal loss gamma parameter, optional.
+        quality_alpha: Quality weighting parameter, optional.
+        focal_alpha: Focal loss alpha parameter, optional.
+        focal_gamma: Focal loss gamma parameter, optional.
     """
 
     def __init__(
         self,
         loss_weights: Dict[str, float],
         cost_weights: Optional[Dict[str, float]] = None,
-        alpha: float = 0.25,
-        gamma: float = 2.0,
+        quality_alpha: float = 0.25,
+        focal_alpha: float = 0.25,
+        focal_gamma: float = 2.0,
     ) -> None:
         self.loss_weights = loss_weights
         self.cost_weights = cost_weights if cost_weights is not None else loss_weights
-        self.alpha = alpha
-        self.gamma = gamma
+        self.alpha = quality_alpha
+        self.gamma = focal_gamma
 
-        self.matcher = HungarianMatcher(cost_weights=self.cost_weights, alpha=alpha, gamma=gamma)
+        self.matcher = HungarianMatcher(self.cost_weights, focal_alpha, focal_gamma)
 
     def __call__(
         self,
