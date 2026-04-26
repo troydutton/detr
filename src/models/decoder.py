@@ -254,7 +254,6 @@ class TransformerDecoder(Module):
         query_ref = []
         encoder_boxes, encoder_logits = [], []
 
-        # TODO: Optimize proposal generation by batching group calculations
         for g in range(num_groups):
             # Project the encoder features into a separate latent space
             feature_embed = self.encoder_projection[g](features.embed)

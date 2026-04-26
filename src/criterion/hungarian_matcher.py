@@ -53,7 +53,6 @@ class HungarianMatcher:
         matches_per_image = [min(len(target["labels"]), num_queries) for target in targets]
         device = predictions.logits.device
 
-        # TODO: Evaluate batching cost calculations across images
         batch_indices, layer_indices, group_indices, query_indices, target_indices = [], [], [], [], []
 
         for i in range(batch_size):
