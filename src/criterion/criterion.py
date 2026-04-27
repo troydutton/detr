@@ -262,7 +262,8 @@ class Criterion:
 
         batch_indices, layer_indices, group_indices, query_indices, target_indices = [], [], [], [], []
 
-        # TODO: This is unreadable, probably chill though
+        # Build indices for denoising queries, which are batched by image and layer, and
+        # repeated according to the number of objects in the image.
         for b, num_objects in enumerate(objects_per_image):
             num_denoise_groups = num_queries // (2 * num_objects) if num_objects > 0 else 0
 
