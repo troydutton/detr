@@ -12,7 +12,7 @@ from data.coco_dataset import Target
 from models.backbone import Features
 from models.layers.ffn import FFN
 from models.layers.positional_embedding import build_pos_embed
-from utils.boxes import clamp_boxes
+from utils.boxes import add_box_offsets, clamp_boxes
 from utils.misc import take_annotation_from
 
 
@@ -160,7 +160,7 @@ class TransformerDecoder(Module):
 
             # Update the reference boxes
             offsets = self.bbox_head(query_embed := self.norm(queries.embed))
-            layer_boxes = self._update_references(queries.reference, offsets)
+            layer_boxes = add_box_offsets(queries.reference, offsets)
 
             # Refine the reference boxes and positional embeddings for the next layer
             if self.refine_boxes:
@@ -263,7 +263,7 @@ class TransformerDecoder(Module):
             wh = torch.full_like(features.reference, 0.05) * (2**features.levels).unsqueeze(-1)
             references = torch.cat([features.reference, wh], dim=-1)
             offsets = self.encoder_bbox_head[g](feature_embed)
-            boxes = self._update_references(references, offsets)
+            boxes = add_box_offsets(references, offsets)
 
             # Identify the features with the highest proposal scores (max class probability)
             logits: Tensor = self.encoder_class_head[g](feature_embed)
@@ -386,25 +386,6 @@ class TransformerDecoder(Module):
         queries.denoise_attention_mask = attention_mask
 
         return queries
-
-    def _update_references(self, references: Tensor, offsets: Tensor) -> Tensor:
-        """
-        Updates the reference boxes using the predicted offsets.
-
-        The updated reference boxes are defined as (x + (Δx * w), y + (Δy * h), w * exp(Δw), h * exp(Δh)).
-
-        Args:
-            references: Current reference boxes with shape (batch_size, num_queries, 4).
-            offsets: Predicted offsets with shape (batch_size, num_queries, 4).
-
-        Returns:
-            updated_references: Updated reference boxes with shape (batch_size, num_queries, 4).
-        """
-
-        xy = references[..., :2] + (offsets[..., :2] * references[..., 2:])
-        wh = references[..., 2:] * offsets[..., 2:].clamp(-3.0, 3.0).exp()
-
-        return clamp_boxes(torch.cat([xy, wh], dim=-1), box_format="cxcywh")
 
     @torch.no_grad()
     def _initialize_weights(self) -> None:

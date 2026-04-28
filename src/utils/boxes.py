@@ -131,3 +131,23 @@ def clamp_boxes(
     boxes = box_convert(boxes, "cxcywh", box_format)
 
     return boxes
+
+
+def add_box_offsets(references: Tensor, offsets: Tensor) -> Tensor:
+    """
+    Updates the reference boxes using the predicted offsets.
+
+    The updated reference boxes are defined as (x + (Δx * w), y + (Δy * h), w * exp(Δw), h * exp(Δh)).
+
+    Args:
+        references: Current reference boxes in CXCYWH with shape (..., 4).
+        offsets: Predicted offsets with shape (..., 4).
+
+    Returns:
+        updated_references: Updated reference boxes with shape (..., 4).
+    """
+
+    xy = references[..., :2] + (offsets[..., :2] * references[..., 2:])
+    wh = references[..., 2:] * offsets[..., 2:].clamp(-3.0, 3.0).exp()
+
+    return clamp_boxes(torch.cat([xy, wh], dim=-1), box_format="cxcywh")
