@@ -39,7 +39,7 @@ accelerate launch src/train.py --config-name <config-name> <additional-args>
 To evaluate a model, use the `eval.py` script.
 
 ```bash
-accelerate launch src/eval.py --config-name <config-name> model.pretrained_weights=<path-to-weights> <additional-args>
+accelerate launch src/evaluate.py --config-name <config-name> model.pretrained_weights=<path-to-weights> <additional-args>
 ```
 
 ## Exporting
