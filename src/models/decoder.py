@@ -28,6 +28,12 @@ class Queries:
     denoise_attention_mask: Optional[Tensor] = None
 
 
+@dataclass
+class Predictions:
+    boxes: Tensor
+    logits: Tensor
+
+
 class TransformerDecoder(Module):
     """
     Transformer decoder composed of a stack of N decoder layers.
@@ -112,7 +118,7 @@ class TransformerDecoder(Module):
         self,
         features: Features,
         targets: List[Target] = None,
-    ) -> Tuple[Tensor, Tensor, Optional[Tensor], Optional[Tensor], Optional[Tensor], Optional[Tensor]]:
+    ) -> Tuple[Predictions, Optional[Predictions], Optional[Predictions]]:
         """
         Forward pass for the transformer decoder.
 
@@ -121,17 +127,7 @@ class TransformerDecoder(Module):
             targets: List of targets for each image, optional.
 
         Returns:
-            boxes: Decoder box predictions.
-            #### logits
-            Decoder class logits.
-            #### encoder_boxes
-            Encoder proposal box predictions.
-            #### encoder_logits
-            Encoder proposal class logits.
-            #### denoise_boxes
-            Denoising query box predictions.
-            #### denoise_logits
-            Denoising query class logits.
+            predictions: Decoder, encoder, and denoising predictions, with normalized CXCYWH `boxes` and class `logits`.
         """
 
         assert features.embed.ndim == 3, f"Expected features of shape (batch_size, num_features, embed_dim), got {features.embed.shape=}"
@@ -145,7 +141,7 @@ class TransformerDecoder(Module):
             queries, encoder_boxes, encoder_logits = self._generate_query_proposals(features, num_groups)
         else:
             queries = self._initialize_object_queries(batch_size, num_groups)
-            encoder_boxes = encoder_logits = None
+            encoder_boxes, encoder_logits = None, None
 
         # Add a learnable task embedding to distinguish between object and denoising queries
         queries.embed += self.object_embed.weight[None, ...]
@@ -187,7 +183,7 @@ class TransformerDecoder(Module):
         num_object_queries = num_groups * self.num_queries
         num_denoise_queries = total_queries - num_object_queries
 
-        denoise_boxes = denoise_logits = None
+        denoise_boxes, denoise_logits = None, None
         if num_denoise_queries > 0:
             boxes, denoise_boxes = boxes.split([num_object_queries, num_denoise_queries], dim=2)
             logits, denoise_logits = logits.split([num_object_queries, num_denoise_queries], dim=2)
@@ -198,7 +194,20 @@ class TransformerDecoder(Module):
         boxes = boxes.reshape(batch_size, self.num_layers, num_groups, self.num_queries, -1)
         logits = logits.reshape(batch_size, self.num_layers, num_groups, self.num_queries, -1)
 
-        return boxes, logits, encoder_boxes, encoder_logits, denoise_boxes, denoise_logits
+        # Build decoder predictions
+        decoder_predictions = Predictions(boxes, logits)
+
+        # Build encoder predictions if enabled
+        encoder_predictions = None
+        if self.two_stage and self.training and encoder_boxes is not None and encoder_logits is not None:
+            encoder_predictions = Predictions(encoder_boxes, encoder_logits)
+
+        # Build denoising predictions if enabled
+        denoise_predictions = None
+        if self.denoise_queries and self.training and denoise_boxes is not None and denoise_logits is not None:
+            denoise_predictions = Predictions(denoise_boxes, denoise_logits)
+
+        return decoder_predictions, encoder_predictions, denoise_predictions
 
     def _initialize_object_queries(self, batch_size: int, num_groups: int) -> Queries:
         """

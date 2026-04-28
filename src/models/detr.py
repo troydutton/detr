@@ -1,5 +1,4 @@
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
@@ -8,19 +7,13 @@ from torch import Tensor, nn
 
 from data.coco_dataset import Target
 from models.backbone import Backbone
-from models.decoder import TransformerDecoder
+from models.decoder import Predictions, TransformerDecoder
 from models.encoder import TransformerEncoder
 from utils.checkpoint import load_state_dict
 from utils.misc import take_annotation_from
 from utils.postprocess import Detections, postprocess
 
 VALID_WEIGHT_FILES = ["ema_model.safetensors", "model.safetensors"]
-
-
-@dataclass
-class Predictions:
-    boxes: Tensor
-    logits: Tensor
 
 
 class DETR(nn.Module):
@@ -62,7 +55,7 @@ class DETR(nn.Module):
             targets: List of targets for each image, optional.
 
         Returns:
-            predictions: Decoder, optionally encoder, and optionally denoising query predictions, with normalized CXCYWH `boxes` and class `logits`.
+            predictions: Decoder, encoder, and denoising predictions, with normalized CXCYWH `boxes` and class `logits`.
         """
 
         # Extract image features
@@ -72,19 +65,7 @@ class DETR(nn.Module):
         features = self.encoder(features)
 
         # Decode the features into object predictions
-        boxes, logits, encoder_boxes, encoder_logits, denoise_boxes, denoise_logits = self.decoder(features, targets=targets)
-
-        decoder_predictions = Predictions(boxes, logits)
-
-        encoder_predictions, denoise_predictions = None, None
-
-        # Supervise encoder predictions if enabled
-        if self.decoder.two_stage and self.training and encoder_boxes is not None and encoder_logits is not None:
-            encoder_predictions = Predictions(encoder_boxes, encoder_logits)
-
-        # Supervised denoising predictions if enabled
-        if self.decoder.denoise_queries and self.training and denoise_boxes is not None and denoise_logits is not None:
-            denoise_predictions = Predictions(denoise_boxes, denoise_logits)
+        decoder_predictions, encoder_predictions, denoise_predictions = self.decoder(features, targets=targets)
 
         return decoder_predictions, encoder_predictions, denoise_predictions
 
@@ -117,11 +98,11 @@ class DETR(nn.Module):
         features = self.encoder(features)
 
         # Decode the features into object predictions
-        boxes, logits, _, _, _, _ = self.decoder(features, targets=None)
+        predictions, _, _ = self.decoder(features, targets=None)
 
         # Only use predictions from the final layer and first query group
-        boxes = boxes[:, -1, 0]
-        logits = logits[:, -1, 0]
+        boxes = predictions.boxes[:, -1, 0]
+        logits = predictions.logits[:, -1, 0]
 
         # Return unfiltered predictions for ONNX export
         if export:
