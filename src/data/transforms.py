@@ -187,11 +187,12 @@ def make_transformations(
         return T.Compose(
             [
                 T.ToImage(),
+                T.RandomZoomOut(),
                 T.RandomIoUCrop(),
                 T.Resize(size=(resolution, resolution)),
                 T.RandomHorizontalFlip(),
                 T.ToDtype(torch.float32, scale=True),
-                T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+                T.RandomPhotometricDistort(),
                 RandomErasingBoxAware(p=0.33, value="random"),
                 normalize_transform,
                 T.ClampBoundingBoxes(),
