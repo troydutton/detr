@@ -9,6 +9,7 @@ from torch.nn import Dropout, LayerNorm, Module
 from models.backbone import Features
 from models.layers.deformable_attention import MultiHeadDeformableAttention
 from models.layers.ffn import FFN
+from models.layers.target_gating import TargetGatingLayer
 from utils.misc import take_annotation_from
 
 if TYPE_CHECKING:
@@ -167,6 +168,7 @@ class DeformableDecoderLayer(Module):
         self.norm2 = LayerNorm(embed_dim)
         self.cross_attention = MultiHeadDeformableAttention(embed_dim, num_deformable_heads, num_levels, num_points)
         self.dropout2 = Dropout(dropout)
+        self.gate = TargetGatingLayer(embed_dim)
 
         # Feedforward Network
         self.norm3 = LayerNorm(embed_dim)
@@ -229,7 +231,7 @@ class DeformableDecoderLayer(Module):
             queries.embed = torch.cat([queries.embed, denoise_embed], dim=1)
 
         # Cross-attention
-        queries.embed = queries.embed + self.dropout2(
+        residual = self.dropout2(
             self.cross_attention(
                 queries=self.norm2(queries.embed) + queries.pos,
                 query_reference=queries.reference,
@@ -237,6 +239,7 @@ class DeformableDecoderLayer(Module):
                 dimensions=features.dimensions,
             )
         )
+        queries.embed = self.gate(queries.embed, residual)
 
         # Feedforward Network
         queries.embed = queries.embed + self.dropout3(self.ffn(self.norm3(queries.embed)))

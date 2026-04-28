@@ -3,6 +3,7 @@ from torch import nn
 from models.backbone import Features
 from models.layers.deformable_attention import MultiHeadDeformableAttention
 from models.layers.ffn import FFN
+from models.layers.target_gating import TargetGatingLayer
 from utils.misc import take_annotation_from
 
 
@@ -94,6 +95,7 @@ class DeformableEncoderLayer(nn.Module):
         self.norm1 = nn.LayerNorm(embed_dim)
         self.self_attention = MultiHeadDeformableAttention(embed_dim, num_heads, num_levels, num_points)
         self.dropout1 = nn.Dropout(dropout)
+        self.gate = TargetGatingLayer(embed_dim)
 
         self.norm2 = nn.LayerNorm(embed_dim)
         self.ffn = FFN(embed_dim, ffn_dim, embed_dim, 2, dropout=dropout)
@@ -113,7 +115,7 @@ class DeformableEncoderLayer(nn.Module):
         # Self-attention
         v = self.norm1(features.embed)
         q = v + features.pos
-        features.embed = features.embed + self.dropout1(
+        residual = self.dropout1(
             self.self_attention(
                 queries=q,
                 query_reference=features.reference,
@@ -121,6 +123,7 @@ class DeformableEncoderLayer(nn.Module):
                 dimensions=features.dimensions,
             )
         )
+        features.embed = self.gate(features.embed, residual)
 
         # Feed forward network
         features.embed = features.embed + self.dropout2(self.ffn(self.norm2(features.embed)))

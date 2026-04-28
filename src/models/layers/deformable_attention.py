@@ -19,8 +19,6 @@ class MultiHeadDeformableAttention(nn.Module):
 
         self.sampling_offsets: LinearType = nn.Linear(embed_dim, num_heads * num_levels * num_points * 2)
         self.attention_weights: LinearType = nn.Linear(embed_dim, num_heads * num_levels * num_points)
-        self.value_proj: LinearType = nn.Linear(embed_dim, embed_dim)
-        self.output_proj: LinearType = nn.Linear(embed_dim, embed_dim)
 
         self._initialize_weights()
 
@@ -53,8 +51,8 @@ class MultiHeadDeformableAttention(nn.Module):
         # Convert sampling locations from [0, 1] to [-1, 1] for grid sampling
         points = (points * 2) - 1
 
-        # Project features to value space
-        values = self.value_proj(features).float()
+        # We don't use a value projection to save on computation
+        values = features.float()
 
         # Split values and points by level (num_levels, batch_size * num_heads, num_queries, num_points, 2)
         values = values.split([w * h for w, h in dimensions], dim=1)
@@ -90,8 +88,8 @@ class MultiHeadDeformableAttention(nn.Module):
         # Restore original shape
         output = output.reshape(batch_size, embed_dim, num_queries).transpose(1, 2)
 
-        # Output projection
-        output = self.output_proj(output).to(dtype)
+        # Skip the output projection because we use the target gating mechanism
+        output = output.to(dtype)
 
         return output
 
@@ -119,12 +117,6 @@ class MultiHeadDeformableAttention(nn.Module):
         # Initialize attention weights for uniform attention
         nn.init.zeros_(self.attention_weights.weight)
         nn.init.zeros_(self.attention_weights.bias)
-
-        # Initialize projections to maintain variance
-        nn.init.xavier_uniform_(self.value_proj.weight)
-        nn.init.zeros_(self.value_proj.bias)
-        nn.init.xavier_uniform_(self.output_proj.weight)
-        nn.init.zeros_(self.output_proj.bias)
 
     @take_annotation_from(forward)
     def __call__(self, *args, **kwargs):
