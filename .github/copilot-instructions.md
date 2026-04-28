@@ -3,14 +3,14 @@
 ##  Project Overview
 This project implements the DETR (DEtection TRansformer) model for object detection. The codebase is structured to facilitate easy experimentation with different model architectures, training paradigms, and data processing pipelines.
 
-All source code is located in the `src/` directory. The main entry point for training is `train.py`, the main entry point for evaluation is `eval.py`, and the primary training and evaluation loop is located in `engine.py`.
+All source code is located in the `src/` directory. The main entry points include `train.py`, `evaluate.py`, `inference.py`, and `export.py`. The primary training and evaluation loop is located in `engine.py`.
 
 The primary modules are:
- - `models/`: Contains model definitions (`detr.py`), backbone architectures (`backbone.py`), transformer implementations (`encoder.py`, `decoder.py`), and useful utilities (`layers.py`, `deformable_attention.py`, `positional_embedding.py`).
- - `data/`: Data loading (`coco_dataset.py`) and transformation utilities (`transforms.py`).
+ - `models/`: Contains the model definition (`detr.py`), feature extractor (`dinov2.py`), backbone (`backbone.py`), multi-scale projector (`projector.py`), transformers (`encoder.py`, `decoder.py`). Layers and useful utilities are located in `layers/` (e.g. `deformable_attention.py`, `positional_embedding.py`, etc...).
+ - `data/`: Data loading (`coco_dataset.py`, `image_dataset.py`) and transformation utilities (`transforms.py`).
  - `criterion/`: Loss functions (`criterion.py`) and matching algorithms (`hungarian_matcher.py`).
  - `evaluators/`: Evaluation metrics (`coco_evaluator.py`).
- - `utils/`: Utility functions for bounding box manipulation (`boxes.py`), parameter group initialization (`optimizer.py`), learning rate schedulers (`lr.py`), visualization (`visualize.py`), and miscellaneous helpers (`misc.py`).
+ - `utils/`: Utility functions for bounding box manipulation (`boxes.py`), checkpointing (`checkpoint.py`), fine-grained localization (`distribution.py`), learning rate schedulers (`lr.py`), parameter group initialization (`optimizer.py`), object visualization (`visualize.py`), prediction post-processing (`postprocess.py`), and miscellaneous helpers (`misc.py`).
 
 Configuration files (`configs/`) use the Hydra format, and unit tests (`tests/`) use the pytest framework.
 
@@ -86,3 +86,4 @@ This project is based on the following key papers, use them as references if you
 - [Group DETR](https://ar5iv.labs.arxiv.org/html/2207.13085): Introduces multiple query groups.
 - [DINO DETR](https://ar5iv.labs.arxiv.org/html/2203.03605): Introduces a contrastive denoising objective.
 - [LW-DETR](https://ar5iv.labs.arxiv.org/html/2406.03459): Introduces a lightweight architecture.
+- [D-FINE](https://ar5iv.labs.arxiv.org/html/2410.13842): Introduces bounding box prediction as a probability distribution over discrete bins.
