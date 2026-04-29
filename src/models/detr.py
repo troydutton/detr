@@ -102,7 +102,7 @@ class DETR(nn.Module):
 
         # Only use predictions from the final layer and first query group
         boxes = predictions.boxes[:, -1, 0]
-        logits = predictions.logits[:, -1, 0]
+        logits = predictions.class_logits[:, -1, 0]
 
         # Return unfiltered predictions for ONNX export
         if export:

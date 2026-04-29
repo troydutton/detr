@@ -56,7 +56,7 @@ def create_mock_predictions(boxes, classes, num_layers=1, num_groups=1, num_clas
         for q, c in enumerate(classes[b]):
             pred_logits[b, -1, 0, q, c] = 100.0  # Set high score for correct class in final layer
 
-    return Predictions(logits=pred_logits, boxes=pred_boxes)
+    return Predictions(class_logits=pred_logits, boxes=pred_boxes)
 
 
 def test_coco_evaluator_simple(coco_gt: COCO):

@@ -26,7 +26,7 @@ class TestHungarianMatcher:
         num_classes = 5
 
         predictions = Predictions(
-            logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
+            class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
             boxes=torch.rand((batch_size, num_layers, num_groups, num_queries, 4)),
         )
 
@@ -62,7 +62,7 @@ class TestHungarianMatcher:
         num_classes = 3
 
         predictions = Predictions(
-            logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
+            class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
             boxes=torch.rand((batch_size, num_layers, num_groups, num_queries, 4)),
         )
 
@@ -93,7 +93,7 @@ class TestHungarianMatcher:
         num_classes = 2
 
         predictions = Predictions(
-            logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
+            class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
             boxes=torch.rand((batch_size, num_layers, num_groups, num_queries, 4)),
         )
 
@@ -125,15 +125,15 @@ class TestCriterion:
         num_classes = 4
 
         decoder_preds = Predictions(
-            logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
+            class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
             boxes=torch.rand((batch_size, num_layers, num_groups, num_queries, 4)),
         )
         encoder_preds = Predictions(
-            logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
+            class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
             boxes=torch.rand((batch_size, num_layers, num_groups, num_queries, 4)),
         )
         denoise_preds = Predictions(
-            logits=torch.randn((batch_size, num_layers, 1, num_queries, num_classes)),
+            class_logits=torch.randn((batch_size, num_layers, 1, num_queries, num_classes)),
             boxes=torch.rand((batch_size, num_layers, 1, num_queries, 4)),
         )
 
@@ -169,7 +169,7 @@ class TestCriterion:
         num_classes = 4
 
         decoder_preds = Predictions(
-            logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
+            class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
             boxes=torch.rand((batch_size, num_layers, num_groups, num_queries, 4)),
         )
 
@@ -198,7 +198,7 @@ class TestCriterion:
         num_classes = 4
 
         decoder_preds = Predictions(
-            logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
+            class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
             boxes=torch.rand((batch_size, num_layers, num_groups, num_queries, 4)),
         )
 

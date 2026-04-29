@@ -62,7 +62,7 @@ class CocoEvaluator(Evaluator):
         # Take predictions from the first group in the final layer
         decoder_predictions, _, _ = predictions
         boxes = decoder_predictions.boxes[:, -1, 0]
-        logits = decoder_predictions.logits[:, -1, 0]
+        logits = decoder_predictions.class_logits[:, -1, 0]
         scores, labels = logits.sigmoid().max(dim=-1)
 
         # Extract image ids and scales

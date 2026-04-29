@@ -69,7 +69,7 @@ class Criterion:
 
         # Traditional object query losses are normalized by the number of objects across
         # all groups, excluding the number of layers to allow each layer to contribute equally.
-        _, _, num_decoder_groups, num_decoder_queries, _ = decoder_predictions.logits.shape
+        _, _, num_decoder_groups, num_decoder_queries, _ = decoder_predictions.class_logits.shape
         decoder_objects_per_image = [min(len(t["boxes"]), num_decoder_queries) for t in targets]
         num_decoder_targets = sum(decoder_objects_per_image) * num_decoder_groups
 
@@ -92,7 +92,7 @@ class Criterion:
 
         # Encoder losses
         if encoder_predictions is not None:
-            _, _, num_encoder_groups, num_encoder_queries, _ = encoder_predictions.logits.shape
+            _, _, num_encoder_groups, num_encoder_queries, _ = encoder_predictions.class_logits.shape
             encoder_objects_per_image = [min(len(t["boxes"]), num_encoder_queries) for t in targets]
             num_encoder_targets = sum(encoder_objects_per_image) * num_encoder_groups
 
@@ -114,7 +114,7 @@ class Criterion:
         if denoise_predictions is not None:
             # Denoising losses are normalized by the number of positive denoising samples,
             # determined on the fly because we vary the number of denoising query groups
-            num_denoise_queries = denoise_predictions.logits.shape[3]
+            num_denoise_queries = denoise_predictions.class_logits.shape[3]
             objects_per_image = [min(len(t["boxes"]), num_denoise_queries // 2) for t in targets]
             num_denoise_targets = sum(n * (num_denoise_queries // (2 * n)) if n > 0 else 0 for n in objects_per_image)
 
@@ -214,7 +214,7 @@ class Criterion:
         # Get classification predictions and targets
         prediction_indices, target_indices = matched_indices
 
-        prediction_logits = predictions.logits
+        prediction_logits = predictions.class_logits
         prediction_probs = prediction_logits.sigmoid()
         target_labels = torch.cat([t["labels"][i] for t, i in zip(targets, target_indices)])
         matched_prediction_probs = prediction_probs[*prediction_indices, target_labels]
@@ -256,8 +256,8 @@ class Criterion:
         """
 
         # Get batch information
-        _, num_layers, _, num_queries, _ = denoise_predictions.logits.shape
-        device = denoise_predictions.logits.device
+        _, num_layers, _, num_queries, _ = denoise_predictions.class_logits.shape
+        device = denoise_predictions.class_logits.device
         objects_per_image = [min(len(t["boxes"]), num_queries // 2) for t in targets]
 
         batch_indices, layer_indices, group_indices, query_indices, target_indices = [], [], [], [], []

@@ -49,9 +49,9 @@ class HungarianMatcher:
         """
 
         # Get batch information
-        batch_size, num_layers, num_groups, num_queries, _ = predictions.logits.shape
+        batch_size, num_layers, num_groups, num_queries, _ = predictions.class_logits.shape
         matches_per_image = [min(len(target["labels"]), num_queries) for target in targets]
-        device = predictions.logits.device
+        device = predictions.class_logits.device
 
         batch_indices, layer_indices, group_indices, query_indices, target_indices = [], [], [], [], []
 
@@ -61,7 +61,7 @@ class HungarianMatcher:
             target_boxes = targets[i]["boxes"]
 
             # Retrieve predictions for the image and flatten across layers and groups
-            prediction_logits = predictions.logits[i].flatten(0, 2)
+            prediction_logits = predictions.class_logits[i].flatten(0, 2)
             prediction_boxes = predictions.boxes[i].flatten(0, 2)
 
             # Calculate individual costs
