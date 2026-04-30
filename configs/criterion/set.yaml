@@ -4,6 +4,7 @@ loss_weights:
   box: 5.0
   giou: 2.0
   class: 2.0
+  fgl: 0.15
 
 quality_alpha: 0.25
 focal_alpha: 0.25

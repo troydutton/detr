@@ -55,7 +55,7 @@ class DETR(nn.Module):
             targets: List of targets for each image, optional.
 
         Returns:
-            predictions: Decoder, encoder, and denoising predictions, with normalized CXCYWH `boxes` and class `logits`.
+            predictions: Decoder, encoder, and denoising predictions, with normalized CXCYWH `boxes`, `class_logits`, and `edge_logits`.
         """
 
         # Extract image features
@@ -88,7 +88,7 @@ class DETR(nn.Module):
 
         Returns:
             detections: A list of `Detections` for each image in the batch, containing the filtered `boxes`, `labels`, `scores`, and optionally `categories`.
-                Alternatively, returns the raw `boxes` and `logits` predictions for ONNX export.
+                Alternatively, returns the raw `boxes` and `class_logits` predictions for ONNX export.
         """
 
         # Extract image features

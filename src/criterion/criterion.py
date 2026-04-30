@@ -9,6 +9,7 @@ from torch import Tensor
 
 from criterion.hungarian_matcher import HungarianMatcher
 from utils.boxes import pairwise_box_iou, pairwise_generalized_box_iou
+from utils.distribution import calculate_fgl_targets, make_edge_weights
 
 if TYPE_CHECKING:
     from criterion.hungarian_matcher import MatchIndices
@@ -40,6 +41,7 @@ class Criterion:
         self.cost_weights = cost_weights if cost_weights is not None else loss_weights
         self.alpha = quality_alpha
         self.gamma = focal_gamma
+        self.edge_weights = make_edge_weights(32)
 
         self.matcher = HungarianMatcher(self.cost_weights, focal_alpha, focal_gamma)
 
@@ -54,8 +56,9 @@ class Criterion:
 
         Args:
             predictions: Decoder, encoder, and denoising predictions, with keys
-                - `logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_groups, num_queries, 4).
+                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
+                - `class_logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
             targets: List of targets for each image, with keys
                 - `labels`: Target class labels of shape (num_targets,).
                 - `boxes`: Target bounding boxes of shape (num_targets, 4).
@@ -79,16 +82,18 @@ class Criterion:
 
         num_decoder_targets = max(num_decoder_targets, 1)
 
-        losses = {"box": 0.0, "giou": 0.0, "class": 0.0}
+        losses = {"box": 0.0, "giou": 0.0, "class": 0.0, "fgl": 0.0}
 
         # Decoder losses
         matched_indices = self.matcher(decoder_predictions, targets)
         decoder_box_loss, decoder_giou_loss = self._calculate_box_losses(decoder_predictions, targets, matched_indices)
         decoder_class_loss = self._calculate_class_loss(decoder_predictions, targets, matched_indices)
+        decoder_fgl_loss = self._calculate_localization_loss(decoder_predictions, targets, matched_indices)
 
         losses["box"] += decoder_box_loss / num_decoder_targets
         losses["giou"] += decoder_giou_loss / num_decoder_targets
         losses["class"] += decoder_class_loss / num_decoder_targets
+        losses["fgl"] += decoder_fgl_loss / num_decoder_targets
 
         # Encoder losses
         if encoder_predictions is not None:
@@ -127,10 +132,12 @@ class Criterion:
             matched_indices = self._get_denoise_match_indices(denoise_predictions, targets)
             denoise_box_loss, denoise_giou_loss = self._calculate_box_losses(denoise_predictions, targets, matched_indices)
             denoise_class_loss = self._calculate_class_loss(denoise_predictions, targets, matched_indices)
+            denoise_fgl_loss = self._calculate_localization_loss(denoise_predictions, targets, matched_indices)
 
             losses["box"] += denoise_box_loss / num_denoise_targets
             losses["giou"] += denoise_giou_loss / num_denoise_targets
             losses["class"] += denoise_class_loss / num_denoise_targets
+            losses["fgl"] += denoise_fgl_loss / num_denoise_targets
 
         # The overall loss is a weighted sum of the individual loss components
         losses["overall"] = sum(v * self.loss_weights.get(k, 1) for k, v in losses.items())
@@ -148,8 +155,9 @@ class Criterion:
 
         Args:
             predictions: Model predictions, with keys
-                - `logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
                 - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
+                - `class_logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
             targets: List of targets for each image, with keys
                 - `labels`: Target class labels of shape (num_targets,).
                 - `boxes`: Target bounding boxes of shape (num_targets, 4).
@@ -200,8 +208,9 @@ class Criterion:
 
         Args:
             predictions: Model predictions, with keys
-                - `logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
                 - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
+                - `class_logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
             targets: List of targets for each image, with keys
                 - `labels`: Target class labels of shape (num_targets,).
                 - `boxes`: Target bounding boxes of shape (num_targets, 4).
@@ -241,15 +250,84 @@ class Criterion:
 
         return class_loss
 
+    def _calculate_localization_loss(
+        self,
+        predictions: Predictions,
+        targets: List[Target],
+        matched_indices: MatchIndices,
+    ) -> Tensor:
+        """
+        Calculate the Fine-Grained Localization (FGL) loss.
+
+        Applies IoU-weighted cross-entropy between the predicted edge-offset
+        distributions and the target offsets derived from the ground truth,
+
+        Args:
+            predictions: Model predictions, with keys
+                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
+                - `class_logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
+            targets: List of targets for each image, with keys
+                - `labels`: Target class labels of shape (num_targets,).
+                - `boxes`: Target bounding boxes of shape (num_targets, 4).
+            matched_indices: Matched prediction and target indices.
+
+        Returns:
+            fgl_loss: FGL loss (summed).
+        """
+
+        if predictions.edge_logits is None:
+            return torch.tensor(0.0, device=predictions.boxes.device)
+
+        # Separate the first layer predictions, which serve as fixed references
+        prediction_indices, target_indices = matched_indices
+        batch_indices, layer_indices, group_indices, query_indices = prediction_indices
+
+        target_indices = [indices[layer_indices[batch_indices == i] > 0] for i, indices in enumerate(target_indices)]
+        batch_indices = batch_indices[(keep := layer_indices > 0)]
+        layer_indices = layer_indices[keep]
+        group_indices = group_indices[keep]
+        query_indices = query_indices[keep]
+
+        prediction_indices = (batch_indices, layer_indices, group_indices, query_indices)
+
+        # Select matched predictions and targets
+        references = predictions.boxes[batch_indices, 0, group_indices, query_indices]
+        prediction_boxes = predictions.boxes[batch_indices, layer_indices, group_indices, query_indices]
+        prediction_logits = predictions.edge_logits[batch_indices, layer_indices - 1, group_indices, query_indices]
+        target_boxes = torch.cat([t["boxes"][i] for t, i in zip(targets, target_indices)])
+
+        # No targets, return zero losses
+        if target_boxes.numel() == 0:
+            return torch.tensor(0.0, device=references.device)
+
+        # Calculate distribution targets
+        with torch.no_grad():
+            left_indices, right_indices, left_weights, right_weights = calculate_fgl_targets(references, target_boxes, self.edge_weights)
+
+            iou = pairwise_box_iou(prediction_boxes, target_boxes, box_format="cxcywh").clamp(min=0.01).repeat_interleave(4)
+
+        # Calculate the distribution loss for each edge
+        prediction_logits = prediction_logits.reshape(len(prediction_logits) * 4, -1)
+
+        fgl_loss = left_weights * F.cross_entropy(prediction_logits, left_indices, reduction="none")
+        fgl_loss += right_weights * F.cross_entropy(prediction_logits, right_indices, reduction="none")
+        fgl_loss = (iou * fgl_loss).sum()
+
+        return fgl_loss
+
     def _get_denoise_match_indices(self, denoise_predictions: Predictions, targets: List[Target]) -> MatchIndices:
         """
         Calculates matched indices for denoising queries.
 
         Args:
             denoise_predictions: Denoise predictions, with keys:
-                - `logits`: Class logits of shape (batch_size, num_layers, 1, num_queries, num_classes).
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, 1, num_queries, 4).
-            targets: List of targets for each image.
+                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
+                - `class_logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
+            targets: List of targets for each image, with keys
+                - `labels`: Target class labels of shape (num_targets,).
+                - `boxes`: Target bounding boxes of shape (num_targets, 4).
 
         Returns:
             matched_indices: Matched prediction and target indices.

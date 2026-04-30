@@ -151,34 +151,3 @@ def add_box_offsets(references: Tensor, offsets: Tensor) -> Tensor:
     wh = references[..., 2:] * offsets[..., 2:].clamp(-3.0, 3.0).exp()
 
     return clamp_boxes(torch.cat([xy, wh], dim=-1), box_format="cxcywh")
-
-
-def add_edge_offsets(references: Tensor, edge_offsets: Tensor) -> Tensor:
-    """
-    Updates the reference boxes using the predicted edge offsets.
-
-    The updated reference boxes are defined as
-
-    Args:
-        references: Current reference boxes in CXCYWH with shape (..., 4).
-        edge_offsets: Edge offsets (top, bottom, left, right) with shape (..., 4).
-
-    Returns:
-        updated_references: Updated reference boxes with shape (..., 4).
-    """
-
-    cx = references[..., 0]
-    cy = references[..., 1]
-    w = references[..., 2]
-    h = references[..., 3]
-
-    # Calculate refined coordinates (x1, y1, x2, y2)
-    y1 = (cy - 0.5 * h) - (h * edge_offsets[..., 0])  # Top
-    y2 = (cy + 0.5 * h) + (h * edge_offsets[..., 1])  # Bottom
-    x1 = (cx - 0.5 * w) - (w * edge_offsets[..., 2])  # Left
-    x2 = (cx + 0.5 * w) + (w * edge_offsets[..., 3])  # Right
-
-    boxes = torch.stack([x1, y1, x2, y2], dim=-1)
-    boxes = box_convert(boxes, in_fmt="xyxy", out_fmt="cxcywh")
-
-    return clamp_boxes(boxes, box_format="cxcywh")

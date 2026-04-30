@@ -12,8 +12,8 @@ from data.coco_dataset import Target
 from models.backbone import Features
 from models.layers.ffn import FFN
 from models.layers.positional_embedding import build_pos_embed
-from utils.boxes import add_box_offsets, add_edge_offsets, clamp_boxes
-from utils.distribution import calculate_edge_offsets, make_edge_weights
+from utils.boxes import add_box_offsets, clamp_boxes
+from utils.distribution import add_edge_offsets, make_edge_weights
 from utils.misc import take_annotation_from
 
 
@@ -34,7 +34,6 @@ class Predictions:
     boxes: Tensor
     class_logits: Tensor
     edge_logits: Optional[Tensor] = None
-    initial_boxes: Optional[Tensor] = None
 
 
 class TransformerDecoder(Module):
@@ -160,7 +159,7 @@ class TransformerDecoder(Module):
             queries = self._generate_denoising_queries(queries, targets)
 
         # Iteratively decode the object queries
-        previous_query_embed, layer_edge_logits = 0, 0
+        layer_edge_logits = 0
         boxes, class_logits, edge_logits = [], [], []
         for i, layer in enumerate(self.layers):
             queries: Queries = layer(queries, features)
@@ -183,11 +182,10 @@ class TransformerDecoder(Module):
                 initial_references = initial_boxes.detach()
 
             # Update the edge offset distribution
-            layer_edge_logits = layer_edge_logits + self.distribution_head(previous_query_embed + query_embed)
+            layer_edge_logits = layer_edge_logits + self.distribution_head(query_embed)
 
             # Calculate the refined boxes from the initial references and the cumulative edge offsets
-            edge_offsets = calculate_edge_offsets(layer_edge_logits, self.edge_weights)
-            layer_boxes = add_edge_offsets(initial_references, edge_offsets)
+            layer_boxes = add_edge_offsets(initial_references, layer_edge_logits, self.edge_weights)
 
             # Refine the reference boxes and positional embeddings for the next layer
             queries.reference = layer_boxes.detach()
@@ -196,8 +194,6 @@ class TransformerDecoder(Module):
             boxes.append(layer_boxes)
             class_logits.append(layer_class_logits)
             edge_logits.append(layer_edge_logits)
-
-            previous_query_embed = query_embed.detach()
 
         # Stack the outputs from each layer into a single tensor
         boxes = torch.stack(boxes, dim=1)

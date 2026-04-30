@@ -1,5 +1,10 @@
+from typing import Tuple
+
 import torch
 from torch import Tensor
+from torchvision.ops.boxes import box_convert
+
+from utils.boxes import clamp_boxes
 
 
 def make_edge_weights(
@@ -55,29 +60,129 @@ def make_edge_weights(
     return weights
 
 
-def calculate_edge_offsets(edge_logits: Tensor, edge_weights: Tensor) -> Tensor:
+def add_edge_offsets(references: Tensor, edge_logits: Tensor, edge_weights: Tensor) -> Tensor:
     """
-    Converts edge distribution logits into scalar edge offsets.
+    Updates the reference boxes using the predicted edge offsets.
 
-    The edge offset is defined as the weighted sum of the edge probabilities: Σ P(n) * W(n)
+    The edge offset is defined as the weighted sum of the edge probabilities: Σ P(n) * W(n).
+    We interpret the edge predictions in (left, top, right, bottom) format, because it
+    allows us to easily vectorize calculations with boxes in (x1, y1, x2, y2) format.
+
+    The updated reference boxes are calculated by scaling the edge offsets by their
+    respective box dimensions and adding them to the initial box coordinates.
 
     Args:
+        references: Initial reference boxes in CXCYWH with shape (..., 4).
         edge_logits: Edge logits with shape (..., 4 * (num_bins + 1)).
         edge_weights: Weighting function with shape (num_bins + 1,).
 
     Returns:
-        edge_offsets: Edge offsets (top, bottom, left, right) with shape (..., 4).
+        updated_references: Updated reference boxes with shape (..., 4).
+    """
+
+    # Calculate the edge offsets
+    edge_logits = edge_logits.reshape(*edge_logits.shape[:-1], 4, -1)
+    edge_probs = edge_logits.softmax(dim=-1)
+    edge_offsets = (edge_probs * edge_weights.to(edge_probs.device)).sum(dim=-1)
+
+    # Update the references
+    width, height = references[..., 2], references[..., 3]
+    references = box_convert(references, in_fmt="cxcywh", out_fmt="xyxy")
+    boxes = references + (edge_offsets * torch.stack([-width, -height, width, height], dim=-1))
+    boxes = box_convert(boxes, in_fmt="xyxy", out_fmt="cxcywh")
+
+    return clamp_boxes(boxes, box_format="cxcywh")
+
+
+def calculate_edge_offsets(
+    references: Tensor,
+    target_boxes: Tensor,
+) -> Tensor:
+    """
+    Calculates the edge offsets between the reference and target boxes.
+
+    The edge offsets are defined as the distance between the initial reference box
+    coordinates and the target box coordinates, normalized by the box dimensions.
+
+    Args:
+        references: Initial reference boxes in CXCYWH with shape (..., 4).
+        target_boxes: Ground truth boxes in CXCYWH with shape (..., 4).
+
+    Returns:
+        edge_offsets: Offsets (left, top, right, bottom) with shape (..., 4).
+    """
+
+    width, height = references[..., 2], references[..., 3]
+    references = box_convert(references, in_fmt="cxcywh", out_fmt="xyxy")
+    target_boxes = box_convert(target_boxes, in_fmt="cxcywh", out_fmt="xyxy")
+
+    # Calculate the relative edge offsets
+    offsets = target_boxes - references
+    offsets = offsets / torch.stack([-width, -height, width, height], dim=1)
+
+    return offsets
+
+
+def calculate_fgl_targets(
+    references: Tensor,
+    target_boxes: Tensor,
+    edge_weights: Tensor,
+) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+    """
+    Computes discrete bin indices and interpolation weights for the FGL loss.
+
+    The edge offsets are defined as the distance between the initial reference box
+    coordinates and the target box coordinates, normalized by the box dimensions.
+
+    Args:
+        references: Initial reference boxes in CXCYWH with shape (num_objects, 4).
+        target_boxes: Ground truth boxes in CXCYWH with shape (num_objects, 4).
+        edge_weights: Weighting function with shape (num_bins + 1,).
+
+    Returns:
+        left_indices: Left bin indices with shape (4 * num_objects,).
+        #### right_indices
+        Right bin indices with shape (4 * num_objects,).
+        #### left_weights
+        Left
+        Weight of the bin to the left of the target offsets with shape (4*N,).
+        #### weight_right
+        Weight of the bin to the right of the target offsets with shape (4*N,).
     """
 
     # Get batch information
-    *dims, _ = edge_logits.shape
-    device = edge_logits.device
+    num_bins = len(edge_weights) - 1
+    edge_weights = edge_weights.to(references.device)
 
-    # Separate the edges into (..., 4, num_bins + 1)
-    edge_logits = edge_logits.reshape(*dims, 4, -1)
+    # Calculate edge offsets
+    offsets = calculate_edge_offsets(references, target_boxes).reshape(-1)
 
-    # Weighted sum: (..., 4)
-    edge_probs = edge_logits.softmax(dim=-1)
-    edge_offsets = (edge_probs * edge_weights.to(device)).sum(dim=-1)
+    # Find corresponding bin indices
+    bin_indices = ((edge_weights[None, :] - offsets[:, None]) <= 0).sum(dim=-1) - 1
 
-    return edge_offsets
+    # Calculate the weights for the left and right bins
+    left_weights = torch.zeros_like(bin_indices, dtype=torch.float32)
+    right_weights = torch.zeros_like(bin_indices, dtype=torch.float32)
+
+    # Interpolate weights for offsets that fall in-between two bins
+    interpolate = (bin_indices >= 0) & (bin_indices < num_bins)
+    interpolate_indices = bin_indices[interpolate]
+
+    left_edge_weights = edge_weights[interpolate_indices]
+    right_edge_weights = edge_weights[interpolate_indices + 1]
+
+    left_distance = (offsets[interpolate] - left_edge_weights).abs()
+    right_distance = (offsets[interpolate] - right_edge_weights).abs()
+    bin_distance = (right_edge_weights - left_edge_weights).abs().clamp(min=1e-6)
+
+    left_weights[interpolate] = right_distance / bin_distance
+    right_weights[interpolate] = left_distance / bin_distance
+
+    # Assign full weight to the outside bin if the offset exceeds the weight range
+    left_weights[bin_indices < 0] = 1.0
+    right_weights[bin_indices >= num_bins] = 1.0
+
+    # Ensure bin indices are valid
+    bin_indices = bin_indices.clamp(0, num_bins - 1)
+
+    return bin_indices, bin_indices + 1, left_weights, right_weights
