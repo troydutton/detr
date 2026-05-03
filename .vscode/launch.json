@@ -12,7 +12,6 @@
                 "src/train.py",
                 "train.output_dir=/data/troy/models/detr/debug",
                 "train.batch_size=2",
-                "dataset=coco",
             ],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
