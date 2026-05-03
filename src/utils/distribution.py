@@ -1,5 +1,3 @@
-from typing import Tuple
-
 import torch
 from torch import Tensor
 from torchvision.ops.boxes import box_convert
@@ -7,7 +5,7 @@ from torchvision.ops.boxes import box_convert
 from utils.boxes import clamp_boxes
 
 
-def make_edge_weights(
+def make_edge_offset_weights(
     num_bins: int,
     offset_magnitude: float = 0.5,
     offset_curvature: float = 0.25,
@@ -60,7 +58,7 @@ def make_edge_weights(
     return weights
 
 
-def add_edge_offsets(references: Tensor, edge_logits: Tensor, edge_weights: Tensor) -> Tensor:
+def add_edge_offset(references: Tensor, edge_logits: Tensor, edge_weights: Tensor) -> Tensor:
     """
     Updates the reference boxes using the predicted edge offsets.
 
@@ -94,7 +92,7 @@ def add_edge_offsets(references: Tensor, edge_logits: Tensor, edge_weights: Tens
     return clamp_boxes(boxes, box_format="cxcywh")
 
 
-def calculate_edge_offsets(
+def calculate_edge_offset(
     references: Tensor,
     target_boxes: Tensor,
 ) -> Tensor:
@@ -123,16 +121,18 @@ def calculate_edge_offsets(
     return offsets
 
 
-def calculate_fgl_targets(
+def calculate_edge_offset_probs(
     references: Tensor,
     target_boxes: Tensor,
     edge_weights: Tensor,
-) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+) -> Tensor:
     """
-    Computes discrete bin indices and interpolation weights for the FGL loss.
+    Computes a discrete target distribution for the edge offsets between the reference and target boxes.
 
     The edge offsets are defined as the distance between the initial reference box
     coordinates and the target box coordinates, normalized by the box dimensions.
+    The resulting probability mass is interpolated between the two adjacent bins if
+    the offset falls in-between them, or to the outside bin if it exceeds the weight range.
 
     Args:
         references: Initial reference boxes in CXCYWH with shape (num_objects, 4).
@@ -140,29 +140,22 @@ def calculate_fgl_targets(
         edge_weights: Weighting function with shape (num_bins + 1,).
 
     Returns:
-        left_indices: Left bin indices with shape (4 * num_objects,).
-        #### right_indices
-        Right bin indices with shape (4 * num_objects,).
-        #### left_weights
-        Left
-        Weight of the bin to the left of the target offsets with shape (4*N,).
-        #### weight_right
-        Weight of the bin to the right of the target offsets with shape (4*N,).
+        target_distribution: Target discrete distributions with shape (4 * num_objects, num_bins + 1).
     """
 
     # Get batch information
+    num_objects = len(references)
     num_bins = len(edge_weights) - 1
     edge_weights = edge_weights.to(references.device)
 
     # Calculate edge offsets
-    offsets = calculate_edge_offsets(references, target_boxes).reshape(-1)
+    offsets = calculate_edge_offset(references, target_boxes).reshape(-1)
 
     # Find corresponding bin indices
     bin_indices = ((edge_weights[None, :] - offsets[:, None]) <= 0).sum(dim=-1) - 1
 
-    # Calculate the weights for the left and right bins
-    left_weights = torch.zeros_like(bin_indices, dtype=torch.float32)
-    right_weights = torch.zeros_like(bin_indices, dtype=torch.float32)
+    # Calculate the target probabilities for each edge and bin
+    target_probs = torch.zeros((num_objects * 4, num_bins + 1), device=references.device)
 
     # Interpolate weights for offsets that fall in-between two bins
     interpolate = (bin_indices >= 0) & (bin_indices < num_bins)
@@ -175,14 +168,11 @@ def calculate_fgl_targets(
     right_distance = (offsets[interpolate] - right_edge_weights).abs()
     bin_distance = (right_edge_weights - left_edge_weights).abs().clamp(min=1e-6)
 
-    left_weights[interpolate] = right_distance / bin_distance
-    right_weights[interpolate] = left_distance / bin_distance
+    target_probs[interpolate, interpolate_indices] = right_distance / bin_distance
+    target_probs[interpolate, interpolate_indices + 1] = left_distance / bin_distance
 
     # Assign full weight to the outside bin if the offset exceeds the weight range
-    left_weights[bin_indices < 0] = 1.0
-    right_weights[bin_indices >= num_bins] = 1.0
+    target_probs[bin_indices < 0, 0] = 1.0
+    target_probs[bin_indices >= num_bins, -1] = 1.0
 
-    # Ensure bin indices are valid
-    bin_indices = bin_indices.clamp(0, num_bins - 1)
-
-    return bin_indices, bin_indices + 1, left_weights, right_weights
+    return target_probs

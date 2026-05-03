@@ -9,7 +9,7 @@ from torch import Tensor
 
 from criterion.hungarian_matcher import HungarianMatcher
 from utils.boxes import pairwise_box_iou, pairwise_generalized_box_iou
-from utils.distribution import calculate_fgl_targets, make_edge_weights
+from utils.distribution import calculate_edge_offset_probs, make_edge_offset_weights
 
 if TYPE_CHECKING:
     from criterion.hungarian_matcher import MatchIndices
@@ -27,6 +27,9 @@ class Criterion:
         quality_alpha: Quality weighting parameter, optional.
         focal_alpha: Focal loss alpha parameter, optional.
         focal_gamma: Focal loss gamma parameter, optional.
+        num_bins: Number of bins for edge offset prediction, optional.
+        edge_offset_magnitude: Magnitude of edge offsets, optional.
+        edge_offset_curvature: Curvature of edge offsets, optional.
     """
 
     def __init__(
@@ -36,12 +39,15 @@ class Criterion:
         quality_alpha: float = 0.25,
         focal_alpha: float = 0.25,
         focal_gamma: float = 2.0,
+        num_bins: int = 32,
+        edge_offset_magnitude: float = 0.5,
+        edge_offset_curvature: float = 0.25,
     ) -> None:
         self.loss_weights = loss_weights
         self.cost_weights = cost_weights if cost_weights is not None else loss_weights
         self.alpha = quality_alpha
         self.gamma = focal_gamma
-        self.edge_weights = make_edge_weights(32)
+        self.edge_offset_weights = make_edge_offset_weights(num_bins, edge_offset_magnitude, edge_offset_curvature)
 
         self.matcher = HungarianMatcher(self.cost_weights, focal_alpha, focal_gamma)
 
@@ -259,8 +265,8 @@ class Criterion:
         """
         Calculate the Fine-Grained Localization (FGL) loss.
 
-        Applies IoU-weighted cross-entropy between the predicted edge-offset
-        distributions and the target offsets derived from the ground truth,
+        Defined as the IoU-weighted cross-entropy between the predicted edge offset probabilities
+        and the target distribution, which is calculated based on the reference points and target boxes.
 
         Args:
             predictions: Model predictions, with keys
@@ -276,8 +282,11 @@ class Criterion:
             fgl_loss: FGL loss (summed).
         """
 
+        # Get batch information
+        device = predictions.boxes.device
+
         if predictions.edge_logits is None:
-            return torch.tensor(0.0, device=predictions.boxes.device)
+            return torch.tensor(0.0, device=device)
 
         # Separate the first layer predictions, which serve as fixed references
         prediction_indices, target_indices = matched_indices
@@ -301,18 +310,19 @@ class Criterion:
         if target_boxes.numel() == 0:
             return torch.tensor(0.0, device=references.device)
 
-        # Calculate distribution targets
+        # Calculate the target distribution for each edge
         with torch.no_grad():
-            left_indices, right_indices, left_weights, right_weights = calculate_fgl_targets(references, target_boxes, self.edge_weights)
-
+            target_probs = calculate_edge_offset_probs(references, target_boxes, self.edge_offset_weights)
             iou = pairwise_box_iou(prediction_boxes, target_boxes, box_format="cxcywh").clamp(min=0.01).repeat_interleave(4)
 
-        # Calculate the distribution loss for each edge
+        # Calculate the distribution loss for each edge using Cross-Entropy (Original D-FINE FGL)
         prediction_logits = prediction_logits.reshape(len(prediction_logits) * 4, -1)
 
-        fgl_loss = left_weights * F.cross_entropy(prediction_logits, left_indices, reduction="none")
-        fgl_loss += right_weights * F.cross_entropy(prediction_logits, right_indices, reduction="none")
-        fgl_loss = (iou * fgl_loss).sum()
+        # F.cross_entropy handles the soft targets and applies log-softmax internally
+        fgl_loss = F.cross_entropy(prediction_logits, target_probs, reduction="none")
+
+        # Apply IoU weighting to encourage concentrated distributions for confident predictions
+        fgl_loss = (fgl_loss * iou).sum()
 
         return fgl_loss
 

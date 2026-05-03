@@ -13,7 +13,7 @@ from models.backbone import Features
 from models.layers.ffn import FFN
 from models.layers.positional_embedding import build_pos_embed
 from utils.boxes import add_box_offsets, clamp_boxes
-from utils.distribution import add_edge_offsets, make_edge_weights
+from utils.distribution import add_edge_offset, make_edge_offset_weights
 from utils.misc import take_annotation_from
 
 
@@ -50,8 +50,10 @@ class TransformerDecoder(Module):
         neg_noise_scale: Box noise scale for negatives in denoising queries, optional.
         label_noise_prob: Label noise probability for denoising queries, optional.
         num_denoise_queries: Number of denoising queries, optional.
+        num_bins: Number of bins for edge offset prediction, optional.
+        edge_offset_magnitude: Magnitude of edge offsets, optional.
+        edge_offset_curvature: Curvature of edge offsets, optional.
         two_stage: Initialize object queries using encoder proposals or learned parameters, optional.
-        refine_boxes: Whether to iteratively refine the reference boxes across decoder layers, optional.
         denoise_queries: Whether to use denoising queries during training, optional.
         kwargs: Arguments to construct the decoder layers.
             See `models.layers.decoder.DecoderLayer` or `models.layers.decoder.DeformableDecoderLayer`.
@@ -95,7 +97,7 @@ class TransformerDecoder(Module):
 
         # Predicts the edge offsets for refining the initial references
         self.distribution_head = FFN(embed_dim, embed_dim, 4 * (num_bins + 1), 3)
-        self.edge_weights = make_edge_weights(num_bins, edge_offset_magnitude, edge_offset_curvature)
+        self.edge_offset_weights = make_edge_offset_weights(num_bins, edge_offset_magnitude, edge_offset_curvature)
 
         # Predicts the class logits
         self.class_head = Linear(embed_dim, num_classes)
@@ -185,7 +187,7 @@ class TransformerDecoder(Module):
             layer_edge_logits = layer_edge_logits + self.distribution_head(query_embed)
 
             # Calculate the refined boxes from the initial references and the cumulative edge offsets
-            layer_boxes = add_edge_offsets(initial_references, layer_edge_logits, self.edge_weights)
+            layer_boxes = add_edge_offset(initial_references, layer_edge_logits, self.edge_offset_weights)
 
             # Refine the reference boxes and positional embeddings for the next layer
             queries.reference = layer_boxes.detach()
