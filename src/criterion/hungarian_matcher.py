@@ -38,8 +38,8 @@ class HungarianMatcher:
 
         Args:
             predictions: Model predictions, with keys:
-                - `logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
                 - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_groups, num_queries, 4).
+                - `class_logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
             targets: List of targets for each image, with keys:
                 - `labels`: Target class labels of shape (num_targets,).
                 - `boxes`: Target bounding boxes of shape (num_targets, 4).
