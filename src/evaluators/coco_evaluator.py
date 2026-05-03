@@ -51,8 +51,8 @@ class CocoEvaluator(Evaluator):
 
         Args:
             predictions: Decoder, optionally encoder, and optionally denoise predictions, with keys
-                - `logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
                 - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_groups, num_queries, 4).
+                - `class_logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
             targets: List of targets, where each target contains
                 - `image_id`: Image ID.
                 - `orig_size`: Original image size [height, width].
@@ -110,14 +110,14 @@ class CocoEvaluator(Evaluator):
         Compute the metrics.
 
         Returns:
-            metrics: Dictionary mapping metric names to values.
+            metrics: Mapping for overall, and optionally per-class, metrics (AP, AP50, AP75, APs, APm, and APl).
         """
 
         if not self.predictions:
             return {}
 
+        # Calculate metrics using COCO API, suppressing output
         with silence_stdout():
-            # Load predictions into COCO format
             coco_predictions = self.coco_targets.loadRes(self.predictions)
 
             coco_eval = COCOeval(self.coco_targets, coco_predictions, "bbox")
@@ -141,6 +141,21 @@ class CocoEvaluator(Evaluator):
         if not self.class_metrics:
             return metrics
 
+        metrics = {**metrics, **self._calculate_class_metrics(coco_eval)}
+
+        return metrics
+
+    def _calculate_class_metrics(self, coco_eval: COCOeval) -> Dict[str, Dict[str, float]]:
+        """
+        Calculate per-class metrics.
+
+        Args:
+            coco_eval: Evaluation object.
+
+        Returns:
+            class_metrics: Mapping from category name to metrics (AP, AP50, AP75, APs, APm, and APl).
+        """
+
         # Calculate per-category metrics
         precision = coco_eval.eval["precision"][..., -1]  # (iou_thresholds, recall_thresholds, category_ids, area_ranges)
 
@@ -160,18 +175,16 @@ class CocoEvaluator(Evaluator):
         ap_m = np.ma.filled(ap_m, -1)
         ap_l = np.ma.filled(ap_l, -1)
 
-        metrics.update(
-            {
-                name: {
-                    "AP": ap[i],
-                    "AP50": ap50[i],
-                    "AP75": ap75[i],
-                    "APs": ap_s[i],
-                    "APm": ap_m[i],
-                    "APl": ap_l[i],
-                }
-                for i, name in enumerate(self.category_names)
+        class_metrics = {
+            name: {
+                "AP": ap[i],
+                "AP50": ap50[i],
+                "AP75": ap75[i],
+                "APs": ap_s[i],
+                "APm": ap_m[i],
+                "APl": ap_l[i],
             }
-        )
+            for i, name in enumerate(self.category_names)
+        }
 
-        return metrics
+        return class_metrics
