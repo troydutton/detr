@@ -88,18 +88,18 @@ class Criterion:
 
         num_decoder_targets = max(num_decoder_targets, 1)
 
-        losses = {"box": 0.0, "giou": 0.0, "class": 0.0, "fgl": 0.0}
+        losses = {"box": 0.0, "giou": 0.0, "class": 0.0, "localization": 0.0}
 
         # Decoder losses
         matched_indices = self.matcher(decoder_predictions, targets)
         decoder_box_loss, decoder_giou_loss = self._calculate_box_losses(decoder_predictions, targets, matched_indices)
         decoder_class_loss = self._calculate_class_loss(decoder_predictions, targets, matched_indices)
-        decoder_fgl_loss = self._calculate_localization_loss(decoder_predictions, targets, matched_indices)
+        decoder_localization_loss = self._calculate_localization_loss(decoder_predictions, targets, matched_indices)
 
         losses["box"] += decoder_box_loss / num_decoder_targets
         losses["giou"] += decoder_giou_loss / num_decoder_targets
         losses["class"] += decoder_class_loss / num_decoder_targets
-        losses["fgl"] += decoder_fgl_loss / num_decoder_targets
+        losses["localization"] += decoder_localization_loss / num_decoder_targets
 
         # Encoder losses
         if encoder_predictions is not None:
@@ -138,12 +138,12 @@ class Criterion:
             matched_indices = self._get_denoise_match_indices(denoise_predictions, targets)
             denoise_box_loss, denoise_giou_loss = self._calculate_box_losses(denoise_predictions, targets, matched_indices)
             denoise_class_loss = self._calculate_class_loss(denoise_predictions, targets, matched_indices)
-            denoise_fgl_loss = self._calculate_localization_loss(denoise_predictions, targets, matched_indices)
+            denoise_localization_loss = self._calculate_localization_loss(denoise_predictions, targets, matched_indices)
 
             losses["box"] += denoise_box_loss / num_denoise_targets
             losses["giou"] += denoise_giou_loss / num_denoise_targets
             losses["class"] += denoise_class_loss / num_denoise_targets
-            losses["fgl"] += denoise_fgl_loss / num_denoise_targets
+            losses["localization"] += denoise_localization_loss / num_denoise_targets
 
         # The overall loss is a weighted sum of the individual loss components
         losses["overall"] = sum(v * self.loss_weights.get(k, 1) for k, v in losses.items())
@@ -279,7 +279,7 @@ class Criterion:
             matched_indices: Matched prediction and target indices.
 
         Returns:
-            fgl_loss: FGL loss (summed).
+            localization_loss: FGL loss (summed).
         """
 
         # Get batch information
@@ -302,8 +302,8 @@ class Criterion:
 
         # Select matched predictions and targets
         references = predictions.boxes[batch_indices, 0, group_indices, query_indices]
-        prediction_boxes = predictions.boxes[batch_indices, layer_indices, group_indices, query_indices]
-        prediction_logits = predictions.edge_logits[batch_indices, layer_indices - 1, group_indices, query_indices]
+        prediction_boxes = predictions.boxes[*prediction_indices]
+        prediction_logits = predictions.edge_logits[*prediction_indices]
         target_boxes = torch.cat([t["boxes"][i] for t, i in zip(targets, target_indices)])
 
         # No targets, return zero losses
@@ -315,16 +315,16 @@ class Criterion:
             target_probs = calculate_edge_offset_probs(references, target_boxes, self.edge_offset_weights)
             iou = pairwise_box_iou(prediction_boxes, target_boxes, box_format="cxcywh").clamp(min=0.01).repeat_interleave(4)
 
-        # Calculate the distribution loss for each edge using Cross-Entropy (Original D-FINE FGL)
+        # Calculate the distribution loss for each edge using Cross-Entropy
         prediction_logits = prediction_logits.reshape(len(prediction_logits) * 4, -1)
 
         # F.cross_entropy handles the soft targets and applies log-softmax internally
-        fgl_loss = F.cross_entropy(prediction_logits, target_probs, reduction="none")
+        localization_loss = F.cross_entropy(prediction_logits, target_probs, reduction="none")
 
         # Apply IoU weighting to encourage concentrated distributions for confident predictions
-        fgl_loss = (fgl_loss * iou).sum()
+        localization_loss = (localization_loss * iou).sum()
 
-        return fgl_loss
+        return localization_loss
 
     def _get_denoise_match_indices(self, denoise_predictions: Predictions, targets: List[Target]) -> MatchIndices:
         """

@@ -89,6 +89,9 @@ class TransformerDecoder(Module):
         self.pos_noise_scale = pos_noise_scale
         self.neg_noise_scale = neg_noise_scale
         self.label_noise_prob = label_noise_prob
+        self.num_bins = num_bins
+        self.edge_offset_magnitude = edge_offset_magnitude
+        self.edge_offset_curvature = edge_offset_curvature
         self.two_stage = two_stage
         self.denoise_queries = denoise_queries
 
@@ -160,6 +163,12 @@ class TransformerDecoder(Module):
         if self.training and self.denoise_queries:
             queries = self._generate_denoising_queries(queries, targets)
 
+        # Get query information
+        _, total_queries, _ = queries.embed.shape
+        num_object_queries = num_groups * self.num_queries
+        num_denoise_queries = total_queries - num_object_queries
+        device = queries.embed.device
+
         # Iteratively decode the object queries
         layer_edge_logits = 0
         boxes, class_logits, edge_logits = [], [], []
@@ -177,8 +186,12 @@ class TransformerDecoder(Module):
                 # Save the initial predictions for refinement and supervision
                 initial_boxes = add_box_offsets(queries.reference, offsets)
 
+                # The first layer does't predict edge offsets because it acts as the initial reference points
+                layer_edge_logits = torch.zeros(batch_size, total_queries, 4 * (self.num_bins + 1), device=device)
+
                 boxes.append(initial_boxes)
                 class_logits.append(layer_class_logits)
+                edge_logits.append(layer_edge_logits)
 
                 # Treat the initial references as fixed priors for the subsequent layers
                 initial_references = initial_boxes.detach()
@@ -201,6 +214,7 @@ class TransformerDecoder(Module):
         boxes = torch.stack(boxes, dim=1)
         class_logits = torch.stack(class_logits, dim=1)
         edge_logits = torch.stack(edge_logits, dim=1)
+        _, num_layers, _, _ = boxes.shape
 
         # Mask predictions from padded denoising queries
         if queries.num_denoise_queries > 0:
@@ -209,25 +223,21 @@ class TransformerDecoder(Module):
             edge_logits[:, :, -queries.num_denoise_queries :].masked_fill_(queries.denoise_padding_mask[:, None, :, None], 0.0)
 
         # Separate the denoising query predictions if they exist
-        _, total_queries, _ = queries.embed.shape
-        num_object_queries = num_groups * self.num_queries
-        num_denoise_queries = total_queries - num_object_queries
-
         denoise_boxes, denoise_class_logits, denoise_edge_logits = None, None, None
         if num_denoise_queries > 0:
             decoder_boxes, denoise_boxes = boxes.split([num_object_queries, num_denoise_queries], dim=2)
             decoder_class_logits, denoise_class_logits = class_logits.split([num_object_queries, num_denoise_queries], dim=2)
             decoder_edge_logits, denoise_edge_logits = edge_logits.split([num_object_queries, num_denoise_queries], dim=2)
 
-            denoise_boxes = denoise_boxes.reshape(batch_size, self.num_layers + 1, 1, num_denoise_queries, -1)
-            denoise_class_logits = denoise_class_logits.reshape(batch_size, self.num_layers + 1, 1, num_denoise_queries, -1)
-            denoise_edge_logits = denoise_edge_logits.reshape(batch_size, self.num_layers, 1, num_denoise_queries, -1)
+            denoise_boxes = denoise_boxes.reshape(batch_size, num_layers, 1, num_denoise_queries, -1)
+            denoise_class_logits = denoise_class_logits.reshape(batch_size, num_layers, 1, num_denoise_queries, -1)
+            denoise_edge_logits = denoise_edge_logits.reshape(batch_size, num_layers, 1, num_denoise_queries, -1)
         else:
             decoder_boxes, decoder_class_logits, decoder_edge_logits = boxes, class_logits, edge_logits
 
-        decoder_boxes = decoder_boxes.reshape(batch_size, self.num_layers + 1, num_groups, self.num_queries, -1)
-        decoder_class_logits = decoder_class_logits.reshape(batch_size, self.num_layers + 1, num_groups, self.num_queries, -1)
-        decoder_edge_logits = decoder_edge_logits.reshape(batch_size, self.num_layers, num_groups, self.num_queries, -1)
+        decoder_boxes = decoder_boxes.reshape(batch_size, num_layers, num_groups, self.num_queries, -1)
+        decoder_class_logits = decoder_class_logits.reshape(batch_size, num_layers, num_groups, self.num_queries, -1)
+        decoder_edge_logits = decoder_edge_logits.reshape(batch_size, num_layers, num_groups, self.num_queries, -1)
 
         # Build decoder predictions
         decoder_predictions = Predictions(decoder_boxes, decoder_class_logits, decoder_edge_logits)
