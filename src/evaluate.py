@@ -77,60 +77,47 @@ def main(args: DictConfig) -> None:
 
     # Log results
     if accelerator.is_main_process:
-        header = " Evaluation Results "
-        width = max(len(header), 80)
-
-        print(f"\n{header:=^{width}}")
+        print(f"\n{' Evaluation Results ':=^80}")
         print(f"Weights: {pretrained_weights}")
-        print(f"{' Losses ':-^{width}}")
+        print(f"{' Losses ':-^80}")
         print(", ".join([f"{k}: {v:.2f}" for k, v in losses.items()]))
 
         overall_metrics = metrics.pop("overall")
         col_names = list(overall_metrics.keys())
 
         # Compute standard deviation for each metric across valid classes
-        stds = {}
-        for k in col_names:
-            valid_vals = [m[k] for m in metrics.values() if m[k] != -1]
-            stds[k] = np.std(valid_vals) if valid_vals else 0
-
-        col_widths = [max(len(name), 6) for name in col_names]
-        header_fmt = "{:<20} " + " ".join([f"{{:>{w}}}" for w in col_widths])
-        row_fmt = "{:<20} " + " ".join([f"{{:>{w}.2f}}" for w in col_widths])
+        stds = {k: np.std([m[k] for m in metrics.values() if m[k] != -1]) if metrics else 0 for k in col_names}
 
         # Header
-        print(f"{' Metrics ':-^{width}}")
-        print(header_fmt.format("Class", *col_names))
-        print("-" * width)
+        print(f"{' Metrics ':-^80}")
+        print(f"{'Class':<20} " + " ".join(f"{k:>6}" for k in col_names))
+        print("-" * 80)
 
         # Overall metrics
-        print(row_fmt.format("overall", *[overall_metrics[k] for k in col_names]))
+        print(f"{'overall':<20} " + " ".join(f"{overall_metrics[k] * 100:>6.1f}" for k in col_names))
 
         # Class metrics
         for name, values in metrics.items():
             row = [f"{name:<20}"]
-            for k, w in zip(col_names, col_widths):
+            for k in col_names:
                 val = values[k]
                 mean_val = overall_metrics[k]
-                val_str = f"{val:>{w}.2f}"
 
-                if mean_val == 0 or stds[k] == 0 or val == -1:
-                    row.append(val_str)
-                else:
+                val_str = f"{val:>6.1f}" if val == -1 else f"{val * 100:>6.1f}"
+
+                # Apply color logic: green if > mean + std, red if < mean - std
+                if val != -1 and mean_val != 0 and stds[k] != 0:
                     if val > mean_val + stds[k]:
-                        color = GREEN
+                        val_str = f"{GREEN}{val_str}{RESET}"
                     elif val < mean_val - stds[k]:
-                        color = RED
-                    else:
-                        color = ""
+                        val_str = f"{RED}{val_str}{RESET}"
 
-                    color_end = RESET if color else ""
-                    row.append(f"{color}{val_str}{color_end}")
+                row.append(val_str)
 
             print(" ".join(row))
 
         # Footer
-        print("=" * width)
+        print("=" * 80)
 
     accelerator.end_training()
 
