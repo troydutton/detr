@@ -9,6 +9,7 @@ dropout: 0.1
 num_groups: 13
 num_queries: 300
 num_denoise_queries: 300
+num_inference_queries: 200
 pos_noise_scale: 0.4
 neg_noise_scale: 0.8
 label_noise_prob: 0.25
@@ -46,11 +47,11 @@ encoder:
 decoder:
   num_layers: 4
   two_stage: True
-  refine_boxes: False 
   denoise_queries: True
   num_groups: ${model.num_groups}
   num_queries: ${model.num_queries}
   num_denoise_queries: ${model.num_denoise_queries} 
+  num_inference_queries: ${model.num_inference_queries}
   embed_dim: ${model.embed_dim}
   pos_noise_scale: ${model.pos_noise_scale}
   neg_noise_scale: ${model.neg_noise_scale}

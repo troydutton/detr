@@ -38,6 +38,8 @@ def main(args: DictConfig) -> None:
     args["model"]["decoder"]["num_classes"] = val_dataset.num_classes
     args["model"]["decoder"]["num_groups"] = 1
     args["model"]["decoder"]["denoise_queries"] = False
+    if "num_inference_queries" in args["model"]:
+        args["model"]["decoder"]["num_queries"] = args["model"]["num_inference_queries"]
     model = DETR(**args["model"]).eval()
 
     # Override forward with an export-friendly predict

@@ -65,6 +65,7 @@ class TransformerDecoder(Module):
         num_classes: int,
         num_layers: int,
         num_queries: int,
+        num_inference_queries: int = None,
         num_groups: int = 1,
         pos_noise_scale: float = 0.4,
         neg_noise_scale: float = 0.8,
@@ -85,6 +86,7 @@ class TransformerDecoder(Module):
         self.num_layers = num_layers
         self.num_queries = num_queries
         self.num_groups = num_groups
+        self.num_inference_queries = num_queries if num_inference_queries is None else num_inference_queries
         self.num_denoise_queries = num_denoise_queries
         self.pos_noise_scale = pos_noise_scale
         self.neg_noise_scale = neg_noise_scale
@@ -151,10 +153,11 @@ class TransformerDecoder(Module):
 
         # Initialize the object queries, during inference we only use the first query group
         num_groups = self.num_groups if self.training else 1
+        num_queries = self.num_queries if self.training else self.num_inference_queries
         if self.two_stage:
-            queries, encoder_boxes, encoder_logits = self._generate_query_proposals(features, num_groups)
+            queries, encoder_boxes, encoder_logits = self._generate_query_proposals(features, num_queries, num_groups)
         else:
-            queries = self._initialize_object_queries(batch_size, num_groups)
+            queries = self._initialize_object_queries(batch_size, num_queries, num_groups)
             encoder_boxes, encoder_logits = None, None
 
         # Add a learnable task embedding to distinguish between object and denoising queries
@@ -165,7 +168,7 @@ class TransformerDecoder(Module):
 
         # Get query information
         _, total_queries, _ = queries.embed.shape
-        num_object_queries = num_groups * self.num_queries
+        num_object_queries = num_groups * num_queries
         num_denoise_queries = total_queries - num_object_queries
         device = queries.embed.device
 
@@ -235,9 +238,9 @@ class TransformerDecoder(Module):
         else:
             decoder_boxes, decoder_class_logits, decoder_edge_logits = boxes, class_logits, edge_logits
 
-        decoder_boxes = decoder_boxes.reshape(batch_size, num_layers, num_groups, self.num_queries, -1)
-        decoder_class_logits = decoder_class_logits.reshape(batch_size, num_layers, num_groups, self.num_queries, -1)
-        decoder_edge_logits = decoder_edge_logits.reshape(batch_size, num_layers, num_groups, self.num_queries, -1)
+        decoder_boxes = decoder_boxes.reshape(batch_size, num_layers, num_groups, num_queries, -1)
+        decoder_class_logits = decoder_class_logits.reshape(batch_size, num_layers, num_groups, num_queries, -1)
+        decoder_edge_logits = decoder_edge_logits.reshape(batch_size, num_layers, num_groups, num_queries, -1)
 
         # Build decoder predictions
         decoder_predictions = Predictions(decoder_boxes, decoder_class_logits, decoder_edge_logits)
@@ -254,12 +257,13 @@ class TransformerDecoder(Module):
 
         return decoder_predictions, encoder_predictions, denoise_predictions
 
-    def _initialize_object_queries(self, batch_size: int, num_groups: int) -> Queries:
+    def _initialize_object_queries(self, batch_size: int, num_queries: int, num_groups: int) -> Queries:
         """
         Initializes the object queries for the transformer decoder.
 
         Args:
             batch_size: Batch size to expand the queries to.
+            num_queries: Number of object queries in each group.
             num_groups: Number of query groups to use.
 
         Returns:
@@ -267,7 +271,8 @@ class TransformerDecoder(Module):
         """
 
         # Learned object query embeddings (1, num_groups * num_queries, embed_dim)
-        query_embed = self.queries.weight[: num_groups * self.num_queries].unsqueeze(0)
+        query_embed = self.queries.weight.view(self.num_groups, self.num_queries, -1)[:num_groups, :num_queries]
+        query_embed = query_embed.reshape(num_groups * num_queries, -1).unsqueeze(0)
 
         # Generate reference boxes from the query embeddings
         feature_xy = torch.sigmoid(self.reference_points(query_embed))
@@ -283,14 +288,15 @@ class TransformerDecoder(Module):
         query_pos = query_pos.expand(batch_size, -1, -1).clone()
         query_ref = query_ref.expand(batch_size, -1, -1).clone()
 
-        return Queries(embed=query_embed, pos=query_pos, reference=query_ref, num_groups=num_groups, num_queries=self.num_queries)
+        return Queries(embed=query_embed, pos=query_pos, reference=query_ref, num_groups=num_groups, num_queries=num_queries)
 
-    def _generate_query_proposals(self, features: Features, num_groups: int) -> Tuple[Queries, Tensor, Tensor]:
+    def _generate_query_proposals(self, features: Features, num_queries: int, num_groups: int) -> Tuple[Queries, Tensor, Tensor]:
         """
         Generates initial object queries from the encoder features.
 
         Args:
             features: Multi-level features with shape (batch_size, num_features, embed_dim).
+            num_queries: Number of object queries in each group.
             num_groups: Number of query groups to use.
 
         Returns:
@@ -323,7 +329,7 @@ class TransformerDecoder(Module):
             logits: Tensor = self.encoder_class_head[g](feature_embed)
             scores = logits.max(dim=-1).values
             batch_indices = torch.arange(batch_size, device=device).unsqueeze(1)
-            topk_indices = scores.topk(self.num_queries, dim=1).indices
+            topk_indices = scores.topk(num_queries, dim=1).indices
 
             query_ref.append(boxes[batch_indices, topk_indices])
             encoder_boxes.append(boxes)
@@ -334,7 +340,8 @@ class TransformerDecoder(Module):
         encoder_logits = torch.cat(encoder_logits, dim=1)
 
         # Query embeddings remain learnable
-        query_embed = self.queries.weight[: num_groups * self.num_queries].unsqueeze(0)
+        query_embed = self.queries.weight.view(self.num_groups, self.num_queries, -1)[:num_groups, :num_queries]
+        query_embed = query_embed.reshape(num_groups * num_queries, -1).unsqueeze(0)
         query_embed = query_embed.expand(batch_size, -1, -1).clone()
 
         # Generate positional embeddings from the reference boxes
@@ -344,7 +351,7 @@ class TransformerDecoder(Module):
         query_ref = query_ref.detach()
 
         # Prepare outputs
-        queries = Queries(embed=query_embed, pos=query_pos, reference=query_ref, num_groups=num_groups, num_queries=self.num_queries)
+        queries = Queries(embed=query_embed, pos=query_pos, reference=query_ref, num_groups=num_groups, num_queries=num_queries)
         encoder_boxes = encoder_boxes.view(batch_size, 1, num_groups, num_features, -1)
         encoder_logits = encoder_logits.view(batch_size, 1, num_groups, num_features, -1)
 
