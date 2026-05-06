@@ -5,9 +5,9 @@ from torchvision.ops.boxes import box_area, box_convert
 EPSILON = 1e-4
 
 
-def pairwise_box_iou(boxes1: Tensor, boxes2: Tensor, box_format: str = "xyxy") -> Tensor:
+def paired_box_iou(boxes1: Tensor, boxes2: Tensor, box_format: str = "xyxy") -> Tensor:
     """
-    Calculate the pairwise Intersection over Union (IoU) of two sets of boxes.
+    Calculate the paired Intersection over Union (IoU) of two sets of boxes.
     Equivalent to box_iou(boxes1, boxes2).diag() but avoids calculating the full NxN matrix.
 
     Args:
@@ -39,9 +39,9 @@ def pairwise_box_iou(boxes1: Tensor, boxes2: Tensor, box_format: str = "xyxy") -
     return inter / union
 
 
-def pairwise_generalized_box_iou(boxes1: Tensor, boxes2: Tensor, box_format: str = "xyxy") -> Tensor:
+def paired_generalized_box_iou(boxes1: Tensor, boxes2: Tensor, box_format: str = "xyxy") -> Tensor:
     """
-    Calculate the pairwise Generalized Intersection over Union (GIoU) of two sets of boxes.
+    Calculate the paired Generalized Intersection over Union (GIoU) of two sets of boxes.
     Equivalent to generalized_box_iou(boxes1, boxes2).diag() but avoids calculating the full NxN matrix.
 
     Args:

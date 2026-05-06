@@ -8,7 +8,7 @@ from accelerate import Accelerator
 from torch import Tensor
 
 from criterion.hungarian_matcher import HungarianMatcher
-from utils.boxes import pairwise_box_iou, pairwise_generalized_box_iou
+from utils.boxes import paired_box_iou, paired_generalized_box_iou
 from utils.distribution import calculate_edge_offset_probs, make_edge_offset_weights
 
 if TYPE_CHECKING:
@@ -189,7 +189,7 @@ class Criterion:
         box_loss = F.l1_loss(prediction_boxes, target_boxes, reduction="sum")
 
         # Maximize GIoU
-        giou_loss = (1 - pairwise_generalized_box_iou(prediction_boxes, target_boxes, box_format="cxcywh")).sum()
+        giou_loss = (1 - paired_generalized_box_iou(prediction_boxes, target_boxes, box_format="cxcywh")).sum()
 
         return box_loss, giou_loss
 
@@ -239,7 +239,7 @@ class Criterion:
             prediction_boxes = predictions.boxes[prediction_indices]
             target_boxes = torch.cat([t["boxes"][i] for t, i in zip(targets, target_indices)])
 
-            iou = pairwise_box_iou(prediction_boxes, target_boxes, box_format="cxcywh")
+            iou = paired_box_iou(prediction_boxes, target_boxes, box_format="cxcywh")
 
             quality = ((matched_prediction_probs**self.alpha) * (iou ** (1 - self.alpha))).clamp(min=0.01)
 
@@ -313,7 +313,7 @@ class Criterion:
         # Calculate the target distribution for each edge
         with torch.no_grad():
             target_probs = calculate_edge_offset_probs(references, target_boxes, self.edge_offset_weights)
-            iou = pairwise_box_iou(prediction_boxes, target_boxes, box_format="cxcywh").clamp(min=0.01).repeat_interleave(4)
+            iou = paired_box_iou(prediction_boxes, target_boxes, box_format="cxcywh").clamp(min=0.01).repeat_interleave(4)
 
         # Calculate the distribution loss for each edge using Cross-Entropy
         prediction_logits = prediction_logits.reshape(len(prediction_logits) * 4, -1)
