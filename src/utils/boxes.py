@@ -34,7 +34,7 @@ def pairwise_box_iou(boxes1: Tensor, boxes2: Tensor, box_format: str = "xyxy") -
     wh = (rb - lt).clamp(min=0)
     inter = wh[:, 0] * wh[:, 1]
 
-    union = area1 + area2 - inter
+    union = area1 + area2 - inter + EPSILON
 
     return inter / union
 
@@ -68,14 +68,14 @@ def pairwise_generalized_box_iou(boxes1: Tensor, boxes2: Tensor, box_format: str
     wh = (rb - lt).clamp(min=0)
     inter = wh[:, 0] * wh[:, 1]
 
-    union = area1 + area2 - inter
+    union = area1 + area2 - inter + EPSILON
     iou = inter / union
 
     lti = torch.min(boxes1[:, :2], boxes2[:, :2])
     rbi = torch.max(boxes1[:, 2:], boxes2[:, 2:])
 
     whi = (rbi - lti).clamp(min=0)
-    areai = whi[:, 0] * whi[:, 1]
+    areai = whi[:, 0] * whi[:, 1] + EPSILON
 
     return iou - (areai - union) / areai
 
@@ -102,7 +102,7 @@ def box_intersection(boxes1: Tensor, boxes2: Tensor, box_format: str = "xyxy") -
     width_height = (bottom_right - top_left).clamp(min=0)  # (N,M,2)
     intersection_area = width_height[:, :, 0] * width_height[:, :, 1]  # (N,M)
 
-    return intersection_area
+    return intersection_area + EPSILON
 
 
 def clamp_boxes(
