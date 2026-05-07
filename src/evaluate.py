@@ -13,6 +13,7 @@ from data import CocoDataset, collate_fn
 from engine import evaluate
 from evaluators import CocoEvaluator
 from models import DETR
+from utils.checkpoint import get_weight_path
 
 Args = Dict[str, Union[Any, "Args"]]
 
@@ -77,8 +78,13 @@ def main(args: DictConfig) -> None:
 
     # Log results
     if accelerator.is_main_process:
+        log_roots = [f"`{str(root)}`" for root in val_dataset.roots[:1]]
+        if len(val_dataset.roots) > 1:
+            log_roots.append(f"and {len(val_dataset.roots) - 1} other datasets")
+
         print(f"\n{' Evaluation Results ':=^80}")
-        print(f"Weights: {pretrained_weights}")
+        print(f"Weights: {get_weight_path(pretrained_weights)}")
+        print(f"Roots: {', '.join(log_roots)}")
         print(f"{' Losses ':-^80}")
         print(", ".join([f"{k}: {v:.2f}" for k, v in losses.items()]))
 

@@ -93,7 +93,7 @@ def load_state_dict(pretrained_weights: Union[str, Path]) -> Dict[str, Tensor]:
     """
 
     # Resolve the path to the model weights file
-    pretrained_weights = _get_weight_path(pretrained_weights)
+    pretrained_weights = get_weight_path(pretrained_weights)
 
     logging.info(f"Loading pretrained weights from '{pretrained_weights}'.")
 
@@ -122,7 +122,7 @@ def load_metadata(pretrained_weights: Union[str, Path]) -> Dict[str, str]:
     """
 
     # Resolve the path to the model weights file
-    pretrained_weights = _get_weight_path(pretrained_weights)
+    pretrained_weights = get_weight_path(pretrained_weights)
 
     logging.info(f"Loading metadata from '{pretrained_weights}'.")
 
@@ -134,7 +134,7 @@ def load_metadata(pretrained_weights: Union[str, Path]) -> Dict[str, str]:
     return metadata
 
 
-def _get_weight_path(pretrained_weights: Union[str, Path]) -> Path:
+def get_weight_path(pretrained_weights: Union[str, Path]) -> Path:
     """
     Find the path to the model weights file given a file or accelerate checkpoint directory.
 
