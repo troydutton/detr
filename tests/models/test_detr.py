@@ -76,10 +76,10 @@ def test_detr_forward() -> None:
     assert output.class_logits is not None
 
     # Check output shapes
-    expected_logits_shape = (batch_size, num_decoder_layers + 1, num_groups, num_queries, num_classes)
+    expected_logits_shape = (batch_size, num_decoder_layers, num_groups, num_queries, num_classes)
     assert output.class_logits.shape == expected_logits_shape, f"{expected_logits_shape=}, {output.class_logits.shape=}"
 
-    expected_boxes_shape = (batch_size, num_decoder_layers + 1, num_groups, num_queries, 4)
+    expected_boxes_shape = (batch_size, num_decoder_layers, num_groups, num_queries, 4)
     assert output.boxes.shape == expected_boxes_shape, f"Expected boxes shape {expected_boxes_shape}, got {output.boxes.shape}"
 
     # Check that box coordinates are in [0, 1]

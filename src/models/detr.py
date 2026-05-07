@@ -55,7 +55,7 @@ class DETR(nn.Module):
             targets: List of targets for each image, optional.
 
         Returns:
-            predictions: Decoder, encoder, and denoising predictions, with normalized CXCYWH `boxes`, `class_logits`, and `edge_logits`.
+            predictions: Decoder, encoder, and denoising predictions, with normalized CXCYWH `boxes` and `class_logits`.
         """
 
         # Extract image features
