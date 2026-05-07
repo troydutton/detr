@@ -58,18 +58,20 @@ def draw_annotations(
         # Draw the bounding box
         box = box.tolist()
 
-        draw.rectangle(box, outline=color, width=3)
+        draw.rectangle(box, outline=color)
 
         # Write label and confidence score
         text = label if scores is None else f"{label}: {scores[i].item():.2f}"
-        left, top, right, bottom = font.getbbox(text)
-        text_w = right - left
-        text_h = bottom - top
 
-        text_bg = [box[0], box[1] - text_h, box[0] + text_w, box[1]]
+        # Exact text alignment using textbbox and anchors
+        text_anchor = (box[0], box[1])
+        left, top, right, bottom = draw.textbbox(text_anchor, text, font=font, anchor="lb")
+
+        # Add a tiny bit of padding for readability
+        text_bg = [left - (pad := 2), top - pad, right + pad, bottom + pad]
 
         draw.rectangle(text_bg, fill=color)
-        draw.text((box[0], box[1] - text_h), text, fill=(255, 255, 255), font=font)
+        draw.text(text_anchor, text, fill=(255, 255, 255), font=font, anchor="lb")
 
     return image
 
