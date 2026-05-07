@@ -1,0 +1,3 @@
+_target_: utils.ema.get_warmup_ema_multi_avg_fn
+decay: 0.999
+warmup_steps: 500

@@ -6,7 +6,7 @@ defaults:
   - optimizer: adamw
   - scheduler: step
   - criterion: set
-  - ema: constant 
+  - ema: warmup 
   - _self_
 
 train:
