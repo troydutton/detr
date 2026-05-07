@@ -31,11 +31,13 @@ def train(
     criterion: Criterion,
     evaluator: Evaluator,
     train_data: DataLoader,
+    finetune_data: DataLoader,
     val_data: DataLoader,
     num_epochs: int,
     accelerator: Accelerator,
     output_dir: Union[str, Path],
     start_epoch: int = 0,
+    num_finetune_epochs: int = 0,
     save_period: int = 1,
     max_grad_norm: float = 0.1,
     image_resizer: Optional[Transformation] = None,
@@ -51,11 +53,13 @@ def train(
         criterion: Loss function.
         evaluator: Evaluator to compute metrics.
         train_data: Training data.
+        finetune_data: Fine-tuning data.
         val_data: Validation data.
         num_epochs: Number of epochs to train for.
         accelerator: Accelerator object.
         output_dir: Parent directory to save the weights to.
         start_epoch: Epoch to start training from, optional.
+        num_finetune_epochs: Number of epochs to fine-tune for at the end of training, optional.
         save_period: Period (in epochs) to save the model weights, optional.
         max_grad_norm: Maximum gradient norm for clipping, optional.
         image_resizer: Transformation to resize images at the batch level, optional.
@@ -71,11 +75,11 @@ def train(
             optimizer=optimizer,
             criterion=criterion,
             scheduler=scheduler,
-            data=train_data,
+            data=train_data if epoch < num_epochs - num_finetune_epochs else finetune_data,
             epoch=epoch,
             accelerator=accelerator,
             max_grad_norm=max_grad_norm,
-            image_resizer=image_resizer,
+            image_resizer=image_resizer if epoch < num_epochs - num_finetune_epochs else None,
         )
 
         # Evaluate the model

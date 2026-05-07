@@ -1,3 +1,4 @@
+import copy
 import logging
 from pathlib import Path
 from typing import Any, Dict, Union
@@ -51,6 +52,8 @@ def main(args: DictConfig) -> None:
 
     # Create datasets (config/dataset/*.yaml)
     train_dataset: CocoDataset = instantiate(args["dataset"]["train"])
+    finetune_dataset = copy.copy(train_dataset)
+    finetune_dataset.transforms = instantiate(args["transforms"]["finetune"])
     val_dataset: CocoDataset = instantiate(args["dataset"]["val"])
     image_resizer = DiscreteRandomResize(args["transforms"]["train"]["resolution"])
 
@@ -65,6 +68,16 @@ def main(args: DictConfig) -> None:
         collate_fn=collate_fn,
         pin_memory=True,
     )
+
+    finetune_data = DataLoader(
+        finetune_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        collate_fn=collate_fn,
+        pin_memory=True,
+    )
+
     val_data = DataLoader(
         val_dataset,
         batch_size=batch_size,
@@ -108,7 +121,7 @@ def main(args: DictConfig) -> None:
     scheduler: _LRScheduler = instantiate(args["scheduler"], optimizer=optimizer)
 
     # Distribute training components
-    model, optimizer, train_data, val_data, scheduler = accelerator.prepare(model, optimizer, train_data, val_data, scheduler)
+    model, optimizer, train_data, val_data, finetune_data, scheduler = accelerator.prepare(model, optimizer, train_data, val_data, finetune_data, scheduler)  # fmt: skip
 
     # Create criterion (config/criterion/*.yaml)
     criterion: Criterion = instantiate(args["criterion"])
@@ -140,6 +153,7 @@ def main(args: DictConfig) -> None:
         evaluator=evaluator,
         train_data=train_data,
         val_data=val_data,
+        finetune_data=finetune_data,
         accelerator=accelerator,
         image_resizer=image_resizer,
         **args["train"],

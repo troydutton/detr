@@ -188,12 +188,25 @@ def make_transformations(
             [
                 T.ToImage(),
                 T.RandomZoomOut(),
-                T.RandomIoUCrop(),
+                T.RandomApply([T.RandomIoUCrop()], p=0.8),
                 T.Resize(size=(resolution, resolution)),
                 T.RandomHorizontalFlip(),
                 T.ToDtype(torch.float32, scale=True),
                 T.RandomPhotometricDistort(),
                 RandomErasingBoxAware(p=0.33, value="random"),
+                normalize_transform,
+                T.ClampBoundingBoxes(),
+                T.SanitizeBoundingBoxes(labels_getter=_get_labels),
+            ]
+        )
+
+    if split == "finetune":
+        return T.Compose(
+            [
+                T.ToImage(),
+                T.Resize(size=(resolution, resolution)),
+                T.RandomHorizontalFlip(),
+                T.ToDtype(torch.float32, scale=True),
                 normalize_transform,
                 T.ClampBoundingBoxes(),
                 T.SanitizeBoundingBoxes(labels_getter=_get_labels),
