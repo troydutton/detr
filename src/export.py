@@ -70,6 +70,7 @@ def main(args: DictConfig) -> None:
         do_constant_folding=True,
         input_names=["images"],
         output_names=["boxes", "logits"],
+        external_data=False,
         verbose=False,
     )
 
