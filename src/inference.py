@@ -155,7 +155,7 @@ def main(args: DictConfig) -> None:
 
     # Video creation
     if accelerator.is_main_process and args["make_video"]:
-        video_path = output_dir / "video.mp4"
+        video_path = output_dir / f"{output_dir.stem}.mp4"
         logging.info(f"Saving inference video to '{video_path}'.")
 
         image_paths = sorted(list(images_dir.glob("*.jpg")))
