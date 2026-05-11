@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from torch import Tensor
-from torchvision.ops import nms
+from torchvision.ops import batched_nms
 from torchvision.ops.boxes import box_convert
 
 
@@ -44,7 +44,7 @@ def postprocess(
         image_boxes, image_scores, image_labels = image_boxes[keep], image_scores[keep], image_labels[keep]
 
         # Apply non-maximum suppression
-        keep = nms(box_convert(image_boxes, "cxcywh", "xyxy"), image_scores, iou_threshold)
+        keep = batched_nms(box_convert(image_boxes, "cxcywh", "xyxy"), image_scores, image_labels, iou_threshold)
         image_boxes, image_scores, image_labels = image_boxes[keep], image_scores[keep], image_labels[keep]
 
         if categories is not None:
