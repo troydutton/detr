@@ -8,5 +8,11 @@ defaults:
 model:
   pretrained_weights: /path/to/pretrained/weights
 
+optimize_thresholds: True
+confidence_thresholds: [0.3, 0.7, 0.05]
+iou_thresholds: [0.3, 0.7, 0.1]
+batch_size: 8
+num_workers: 4
+
 output_dir: /path/to/output/dir
 opset_version: 18
