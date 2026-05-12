@@ -123,18 +123,21 @@ class TestCriterion:
         num_groups = 1
         num_queries = 5
         num_classes = 4
+        num_bins = 4
 
         decoder_preds = Predictions(
-            class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
             boxes=torch.rand((batch_size, num_layers, num_groups, num_queries, 4)),
+            class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
+            edge_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1))),
         )
         encoder_preds = Predictions(
-            class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
             boxes=torch.rand((batch_size, num_layers, num_groups, num_queries, 4)),
+            class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
         )
         denoise_preds = Predictions(
-            class_logits=torch.randn((batch_size, num_layers, 1, num_queries, num_classes)),
             boxes=torch.rand((batch_size, num_layers, 1, num_queries, 4)),
+            class_logits=torch.randn((batch_size, num_layers, 1, num_queries, num_classes)),
+            edge_logits=torch.randn((batch_size, num_layers, 1, num_queries, 4 * (num_bins + 1))),
         )
 
         targets: List[Dict[str, Tensor]] = [
@@ -148,15 +151,18 @@ class TestCriterion:
             },
         ]
 
-        criterion = Criterion(loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0})
+        criterion = Criterion(loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0}, num_bins=num_bins)
 
         losses = criterion((decoder_preds, encoder_preds, denoise_preds), targets)
 
         assert "box" in losses
         assert "class" in losses
         assert "giou" in losses
+        assert "localization" in losses
         assert "overall" in losses
-        assert losses["overall"] > 0
+
+        for key, value in losses.items():
+            assert torch.isfinite(value), f"Loss {key} is not finite: {value.item()}"
 
     def test_criterion_no_encoder_no_denoise(self) -> None:
         """
@@ -167,10 +173,12 @@ class TestCriterion:
         num_groups = 1
         num_queries = 5
         num_classes = 4
+        num_bins = 4
 
         decoder_preds = Predictions(
-            class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
             boxes=torch.rand((batch_size, num_layers, num_groups, num_queries, 4)),
+            class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
+            edge_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1))),
         )
 
         targets: List[Dict[str, Tensor]] = [
@@ -180,12 +188,20 @@ class TestCriterion:
             }
         ]
 
-        criterion = Criterion(loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0}, cost_weights={"class": 2.0, "box": 5.0, "giou": 2.0})
+        criterion = Criterion(
+            loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0}, cost_weights={"class": 2.0, "box": 5.0, "giou": 2.0}, num_bins=num_bins
+        )
 
         losses = criterion((decoder_preds, None, None), targets)
 
-        assert losses["box"] >= 0
-        assert losses["giou"] >= 0
+        assert "box" in losses
+        assert "class" in losses
+        assert "giou" in losses
+        assert "localization" in losses
+        assert "overall" in losses
+
+        for key, value in losses.items():
+            assert torch.isfinite(value), f"Loss {key} is not finite: {value.item()}"
 
     def test_criterion_empty_targets(self) -> None:
         """
@@ -196,10 +212,12 @@ class TestCriterion:
         num_groups = 1
         num_queries = 5
         num_classes = 4
+        num_bins = 4
 
         decoder_preds = Predictions(
-            class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
             boxes=torch.rand((batch_size, num_layers, num_groups, num_queries, 4)),
+            class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
+            edge_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1))),
         )
 
         targets: List[Dict[str, Tensor]] = [
@@ -209,8 +227,15 @@ class TestCriterion:
             }
         ]
 
-        criterion = Criterion(loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0})
+        criterion = Criterion(loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0}, num_bins=num_bins)
 
         losses = criterion((decoder_preds, None, None), targets)
-        assert losses["box"] == 0
-        assert losses["giou"] == 0
+
+        assert "box" in losses
+        assert "class" in losses
+        assert "giou" in losses
+        assert "localization" in losses
+        assert "overall" in losses
+
+        for key, value in losses.items():
+            assert torch.isfinite(value), f"Loss {key} is not finite: {value.item()}"

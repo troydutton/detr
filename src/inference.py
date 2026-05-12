@@ -19,7 +19,7 @@ from data import ImageDataset, make_normalize_transform
 from models import DETR
 from utils.checkpoint import load_metadata
 from utils.postprocess import Detections, postprocess
-from utils.visualize import draw_annotations, make_color_map
+from utils.visualize import draw_annotations
 
 Args = Dict[str, Union[Any, "Args"]]
 
@@ -111,7 +111,8 @@ def main(args: DictConfig) -> None:
         raise ValueError(f"Unsupported model extension: {pretrained_weights.suffix}")
 
     # Create color map for consistent annotation colors across images
-    color_map = make_color_map(categories)
+    # color_map = make_color_map(categories)
+    color_map = {category: (161, 153, 202) for category in categories}
 
     # Create output directory
     output_dir = Path(args["output_dir"])

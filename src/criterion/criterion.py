@@ -9,6 +9,7 @@ from torch import Tensor
 
 from criterion.hungarian_matcher import HungarianMatcher
 from utils.boxes import paired_box_iou, paired_generalized_box_iou
+from utils.edges import calculate_edge_offset_probs, make_edge_offset_weights
 
 if TYPE_CHECKING:
     from criterion.hungarian_matcher import MatchIndices
@@ -26,6 +27,9 @@ class Criterion:
         quality_alpha: Quality weighting parameter, optional.
         focal_alpha: Focal loss alpha parameter, optional.
         focal_gamma: Focal loss gamma parameter, optional.
+        num_bins: Number of bins for edge offset prediction, optional.
+        edge_offset_magnitude: Magnitude of edge offsets, optional.
+        edge_offset_curvature: Curvature of edge offsets, optional.
     """
 
     def __init__(
@@ -35,6 +39,9 @@ class Criterion:
         quality_alpha: float = 0.25,
         focal_alpha: float = 0.25,
         focal_gamma: float = 2.0,
+        num_bins: int = 32,
+        edge_offset_magnitude: float = 0.5,
+        edge_offset_curvature: float = 0.25,
     ) -> None:
         self.loss_weights = loss_weights
         self.cost_weights = cost_weights if cost_weights is not None else loss_weights
@@ -42,6 +49,8 @@ class Criterion:
         self.gamma = focal_gamma
 
         self.matcher = HungarianMatcher(self.cost_weights, focal_alpha, focal_gamma)
+
+        self.edge_offset_weights = make_edge_offset_weights(num_bins, edge_offset_magnitude, edge_offset_curvature)
 
     def __call__(
         self,
@@ -56,6 +65,7 @@ class Criterion:
             predictions: Decoder, encoder, and denoising predictions, with keys
                 - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
                 - `class_logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
             targets: List of targets for each image, with keys
                 - `labels`: Target class labels of shape (num_targets,).
                 - `boxes`: Target bounding boxes of shape (num_targets, 4).
@@ -79,16 +89,18 @@ class Criterion:
 
         num_decoder_targets = max(num_decoder_targets, 1)
 
-        losses = {"box": 0.0, "giou": 0.0, "class": 0.0}
+        losses = {"box": 0.0, "giou": 0.0, "class": 0.0, "localization": 0.0}
 
         # Decoder losses
         matched_indices = self.matcher(decoder_predictions, targets)
         decoder_box_loss, decoder_giou_loss = self._calculate_box_losses(decoder_predictions, targets, matched_indices)
         decoder_class_loss = self._calculate_class_loss(decoder_predictions, targets, matched_indices)
+        decoder_localization_loss = self._calculate_localization_loss(decoder_predictions, targets, matched_indices)
 
         losses["box"] += decoder_box_loss / num_decoder_targets
         losses["giou"] += decoder_giou_loss / num_decoder_targets
         losses["class"] += decoder_class_loss / num_decoder_targets
+        losses["localization"] += decoder_localization_loss / num_decoder_targets
 
         # Encoder losses
         if encoder_predictions is not None:
@@ -127,10 +139,12 @@ class Criterion:
             matched_indices = self._get_denoise_match_indices(denoise_predictions, targets)
             denoise_box_loss, denoise_giou_loss = self._calculate_box_losses(denoise_predictions, targets, matched_indices)
             denoise_class_loss = self._calculate_class_loss(denoise_predictions, targets, matched_indices)
+            denoise_localization_loss = self._calculate_localization_loss(denoise_predictions, targets, matched_indices)
 
             losses["box"] += denoise_box_loss / num_denoise_targets
             losses["giou"] += denoise_giou_loss / num_denoise_targets
             losses["class"] += denoise_class_loss / num_denoise_targets
+            losses["localization"] += denoise_localization_loss / num_denoise_targets
 
         # The overall loss is a weighted sum of the individual loss components
         losses["overall"] = sum(v * self.loss_weights.get(k, 1) for k, v in losses.items())
@@ -150,6 +164,7 @@ class Criterion:
             predictions: Model predictions, with keys
                 - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
                 - `class_logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
             targets: List of targets for each image, with keys
                 - `labels`: Target class labels of shape (num_targets,).
                 - `boxes`: Target bounding boxes of shape (num_targets, 4).
@@ -202,6 +217,7 @@ class Criterion:
             predictions: Model predictions, with keys
                 - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
                 - `class_logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
             targets: List of targets for each image, with keys
                 - `labels`: Target class labels of shape (num_targets,).
                 - `boxes`: Target bounding boxes of shape (num_targets, 4).
@@ -241,6 +257,76 @@ class Criterion:
 
         return class_loss
 
+    def _calculate_localization_loss(
+        self,
+        predictions: Predictions,
+        targets: List[Target],
+        matched_indices: MatchIndices,
+    ) -> Tensor:
+        """
+        Calculate the Fine-Grained Localization (FGL) loss.
+
+        Defined as the IoU-weighted cross-entropy between the predicted edge offset probabilities
+        and the target edge offset distribution, which is calculated based on the reference points and target boxes.
+
+        Args:
+            predictions: Model predictions, with keys
+                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
+                - `class_logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
+            targets: List of targets for each image, with keys
+                - `labels`: Target class labels of shape (num_targets,).
+                - `boxes`: Target bounding boxes of shape (num_targets, 4).
+            matched_indices: Matched prediction and target indices.
+
+        Returns:
+            localization_loss: FGL loss (summed).
+        """
+
+        # Get batch information
+        device = predictions.boxes.device
+
+        if predictions.edge_logits is None:
+            return torch.tensor(0.0, device=device)
+
+        # Separate the first layer predictions, which serve as fixed references
+        prediction_indices, target_indices = matched_indices
+        batch_indices, layer_indices, group_indices, query_indices = prediction_indices
+
+        target_indices = [indices[layer_indices[batch_indices == i] > 0] for i, indices in enumerate(target_indices)]
+        batch_indices = batch_indices[(keep := layer_indices > 0)]
+        layer_indices = layer_indices[keep]
+        group_indices = group_indices[keep]
+        query_indices = query_indices[keep]
+
+        prediction_indices = (batch_indices, layer_indices, group_indices, query_indices)
+
+        # Select matched predictions and targets
+        references = predictions.boxes[batch_indices, 0, group_indices, query_indices]
+        prediction_boxes = predictions.boxes[*prediction_indices]
+        prediction_logits = predictions.edge_logits[*prediction_indices]
+        target_boxes = torch.cat([t["boxes"][i] for t, i in zip(targets, target_indices)])
+
+        # No targets, return zero losses
+        if target_boxes.numel() == 0:
+            return torch.tensor(0.0, device=references.device)
+
+        # Calculate the target distribution for each edge
+        with torch.no_grad():
+            target_probs = calculate_edge_offset_probs(references, target_boxes, self.edge_offset_weights)
+            iou = paired_box_iou(prediction_boxes, target_boxes, box_format="cxcywh").clamp(min=0.01).repeat_interleave(4)
+
+        # Calculate the distribution loss for each edge using Cross-Entropy
+        prediction_logits = prediction_logits.reshape(len(prediction_logits) * 4, -1)
+
+        # F.cross_entropy handles the soft targets and applies log-softmax internally
+        localization_loss = F.cross_entropy(prediction_logits, target_probs, reduction="none")
+
+        # Apply IoU weighting to encourage concentrated distributions for confident predictions
+        localization_loss = (localization_loss * iou).sum()
+
+        return localization_loss
+
     def _get_denoise_match_indices(self, denoise_predictions: Predictions, targets: List[Target]) -> MatchIndices:
         """
         Calculates matched indices for denoising queries.
@@ -249,6 +335,7 @@ class Criterion:
             denoise_predictions: Denoise predictions, with keys:
                 - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
                 - `class_logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
             targets: List of targets for each image, with keys
                 - `labels`: Target class labels of shape (num_targets,).
                 - `boxes`: Target bounding boxes of shape (num_targets, 4).

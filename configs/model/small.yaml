@@ -13,6 +13,9 @@ num_inference_queries: 200
 pos_noise_scale: 0.4
 neg_noise_scale: 0.8
 label_noise_prob: 0.25
+num_bins: 32
+edge_offset_magnitude: 0.5
+edge_offset_curvature: 0.25
 
 backbone:
   embed_dim: ${model.embed_dim}
@@ -53,6 +56,9 @@ decoder:
   pos_noise_scale: ${model.pos_noise_scale}
   neg_noise_scale: ${model.neg_noise_scale}
   label_noise_prob: ${model.label_noise_prob}
+  num_bins: ${model.num_bins}
+  edge_offset_magnitude: ${model.edge_offset_magnitude}
+  edge_offset_curvature: ${model.edge_offset_curvature}
   layer:
     _target_: models.layers.decoder.DeformableDecoderLayer
     embed_dim: ${model.embed_dim}

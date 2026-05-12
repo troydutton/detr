@@ -9,3 +9,7 @@ loss_weights:
 quality_alpha: 0.25
 focal_alpha: 0.25
 focal_gamma: 2.0
+
+num_bins: ${model.num_bins}
+edge_offset_magnitude: ${model.edge_offset_magnitude}
+edge_offset_curvature: ${model.edge_offset_curvature}

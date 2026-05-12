@@ -13,6 +13,7 @@ from models.backbone import Features
 from models.layers.ffn import FFN
 from models.layers.positional_embedding import build_pos_embed
 from utils.boxes import add_box_offsets, clamp_boxes
+from utils.edges import add_edge_offset, make_edge_offset_weights
 from utils.misc import take_annotation_from
 
 
@@ -32,6 +33,7 @@ class Queries:
 class Predictions:
     boxes: Tensor
     class_logits: Tensor
+    edge_logits: Optional[Tensor] = None
 
 
 class TransformerDecoder(Module):
@@ -48,6 +50,9 @@ class TransformerDecoder(Module):
         neg_noise_scale: Box noise scale for negatives in denoising queries, optional.
         label_noise_prob: Label noise probability for denoising queries, optional.
         num_denoise_queries: Number of denoising queries, optional.
+        num_bins: Number of bins for edge offset prediction, optional.
+        edge_offset_magnitude: Magnitude of edge offsets, optional.
+        edge_offset_curvature: Curvature of edge offsets, optional.
         two_stage: Initialize object queries using encoder proposals or learned parameters, optional.
         denoise_queries: Whether to use denoising queries during training, optional.
         kwargs: Arguments to construct the decoder layers.
@@ -66,6 +71,9 @@ class TransformerDecoder(Module):
         neg_noise_scale: float = 0.8,
         label_noise_prob: float = 0.5,
         num_denoise_queries: int = 100,
+        num_bins: int = 32,
+        edge_offset_magnitude: float = 0.5,
+        edge_offset_curvature: float = 0.25,
         *,
         two_stage: bool = False,
         denoise_queries: bool = False,
@@ -83,11 +91,19 @@ class TransformerDecoder(Module):
         self.pos_noise_scale = pos_noise_scale
         self.neg_noise_scale = neg_noise_scale
         self.label_noise_prob = label_noise_prob
+        self.num_bins = num_bins
+        self.edge_offset_magnitude = edge_offset_magnitude
+        self.edge_offset_curvature = edge_offset_curvature
         self.two_stage = two_stage
         self.denoise_queries = denoise_queries
 
         # Predicts the box offsets
         self.bbox_head = FFN(embed_dim, embed_dim, 4, 3)
+
+        # Predicts the edge offset probabiltiies
+        self.edge_head = FFN(embed_dim, embed_dim, 4 * (num_bins + 1), 3)
+        self.edge_class_head = FFN(embed_dim + (4 * (num_bins + 1)), embed_dim, num_classes, 3)
+        self.edge_offset_weights = make_edge_offset_weights(num_bins, edge_offset_magnitude, edge_offset_curvature)
 
         # Predicts the class logits
         self.class_head = Linear(embed_dim, num_classes)
@@ -128,7 +144,7 @@ class TransformerDecoder(Module):
             targets: List of targets for each image, optional.
 
         Returns:
-            predictions: Decoder, encoder, and denoising predictions, with normalized CXCYWH `boxes` and class `logits`.
+            predictions: Decoder, encoder, and denoising predictions, with normalized CXCYWH `boxes`, `class_logits`, and `edge_logits`.
         """
 
         assert features.embed.ndim == 3, f"Expected features of shape (batch_size, num_features, embed_dim), got {features.embed.shape=}"
@@ -157,51 +173,75 @@ class TransformerDecoder(Module):
         num_denoise_queries = total_queries - num_object_queries
 
         # Iteratively decode the object queries
-        boxes, class_logits = [], []
-        for layer in self.layers:
+        boxes, class_logits, edge_logits = [], [], []
+        for i, layer in enumerate(self.layers):
             queries: Queries = layer(queries, features)
             query_embed: Tensor = self.norm(queries.embed)
 
-            # Predict the boxes and class logits
-            offsets = self.bbox_head(self.norm(queries.embed))
-            layer_boxes = add_box_offsets(queries.reference, offsets)
+            # Predict the class logits
+            layer_class_logits: Tensor = self.class_head(query_embed)
 
-            layer_class_logits = self.class_head(query_embed)
+            # Initialize the reference boxes in the first layer
+            if i == 0:
+                offsets = self.bbox_head(self.norm(queries.embed))
+                layer_boxes = add_box_offsets(queries.reference, offsets)
+                layer_edge_logits = torch.zeros(batch_size, total_queries, 4 * (self.num_bins + 1), device=layer_boxes.device)
 
-            # Supervise the references
-            boxes.append(layer_boxes)
-            class_logits.append(layer_class_logits)
+                boxes.append(layer_boxes)
+                class_logits.append(layer_class_logits)
+                edge_logits.append(layer_edge_logits)
 
-            # Update the reference boxes and positional embeddings
+                # Treat the initial references as fixed priors for all subsequent layers
+                initial_references = layer_boxes.detach()
+                layer_class_logits = layer_class_logits.detach()
+
+            # Refine the edge offsets and boxes
+            layer_edge_logits = layer_edge_logits + self.edge_head(query_embed)
+            layer_boxes = add_edge_offset(initial_references, layer_edge_logits, self.edge_offset_weights)
+
+            # Refine the class logits with edge information
+            class_offsets = self.edge_class_head(torch.cat([query_embed, layer_edge_logits], dim=-1))
+            layer_class_logits = layer_class_logits + class_offsets
+
+            # Update the reference boxes and positional embeddings for the next layer
             queries.reference = layer_boxes.detach()
             queries.pos = self.pos_projection(build_pos_embed(queries.reference, 2 * self.embed_dim))
+
+            boxes.append(layer_boxes)
+            class_logits.append(layer_class_logits)
+            edge_logits.append(layer_edge_logits)
 
         # Stack the outputs from each layer into a single tensor
         boxes = torch.stack(boxes, dim=1)
         class_logits = torch.stack(class_logits, dim=1)
+        edge_logits = torch.stack(edge_logits, dim=1)
         _, num_layers, _, _ = boxes.shape
 
         # Mask predictions from padded denoising queries
         if queries.num_denoise_queries > 0:
             boxes[:, :, -queries.num_denoise_queries :].masked_fill_(queries.denoise_padding_mask[:, None, :, None], 0.0)
             class_logits[:, :, -queries.num_denoise_queries :].masked_fill_(queries.denoise_padding_mask[:, None, :, None], -100.0)
+            edge_logits[:, :, -queries.num_denoise_queries :].masked_fill_(queries.denoise_padding_mask[:, None, :, None], 0.0)
 
         # Separate the denoising query predictions if they exist
-        denoise_boxes, denoise_class_logits = None, None
+        denoise_boxes, denoise_class_logits, denoise_edge_logits = None, None, None
         if num_denoise_queries > 0:
             decoder_boxes, denoise_boxes = boxes.split([num_object_queries, num_denoise_queries], dim=2)
             decoder_class_logits, denoise_class_logits = class_logits.split([num_object_queries, num_denoise_queries], dim=2)
+            decoder_edge_logits, denoise_edge_logits = edge_logits.split([num_object_queries, num_denoise_queries], dim=2)
 
             denoise_boxes = denoise_boxes.reshape(batch_size, num_layers, 1, num_denoise_queries, -1)
             denoise_class_logits = denoise_class_logits.reshape(batch_size, num_layers, 1, num_denoise_queries, -1)
+            denoise_edge_logits = denoise_edge_logits.reshape(batch_size, num_layers, 1, num_denoise_queries, -1)
         else:
-            decoder_boxes, decoder_class_logits = boxes, class_logits
+            decoder_boxes, decoder_class_logits, decoder_edge_logits = boxes, class_logits, edge_logits
 
         decoder_boxes = decoder_boxes.reshape(batch_size, num_layers, num_groups, num_queries, -1)
         decoder_class_logits = decoder_class_logits.reshape(batch_size, num_layers, num_groups, num_queries, -1)
+        decoder_edge_logits = decoder_edge_logits.reshape(batch_size, num_layers, num_groups, num_queries, -1)
 
         # Build decoder predictions
-        decoder_predictions = Predictions(decoder_boxes, decoder_class_logits)
+        decoder_predictions = Predictions(decoder_boxes, decoder_class_logits, decoder_edge_logits)
 
         # Build encoder predictions if enabled
         encoder_predictions = None
@@ -211,7 +251,7 @@ class TransformerDecoder(Module):
         # Build denoising predictions if enabled
         denoise_predictions = None
         if self.denoise_queries and self.training and denoise_boxes is not None and denoise_class_logits is not None:
-            denoise_predictions = Predictions(denoise_boxes, denoise_class_logits)
+            denoise_predictions = Predictions(denoise_boxes, denoise_class_logits, denoise_edge_logits)
 
         return decoder_predictions, encoder_predictions, denoise_predictions
 
