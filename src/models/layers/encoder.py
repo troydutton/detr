@@ -2,8 +2,8 @@ from torch import nn
 
 from models.backbone import Features
 from models.layers.deformable_attention import MultiHeadDeformableAttention
-from models.layers.ffn import FFN
-from models.layers.target_gating import TargetGatingLayer
+from models.layers.ffn import SwiGLUFFN
+from models.layers.gate import Gate
 from utils.misc import take_annotation_from
 
 
@@ -36,7 +36,7 @@ class EncoderLayer(nn.Module):
         self.dropout1 = nn.Dropout(dropout)
 
         self.norm2 = nn.LayerNorm(embed_dim)
-        self.ffn = FFN(embed_dim, ffn_dim, embed_dim, 2, dropout=dropout)
+        self.ffn = SwiGLUFFN(embed_dim, ffn_dim, embed_dim)
         self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, features: Features) -> Features:
@@ -95,10 +95,10 @@ class DeformableEncoderLayer(nn.Module):
         self.norm1 = nn.LayerNorm(embed_dim)
         self.self_attention = MultiHeadDeformableAttention(embed_dim, num_heads, num_levels, num_points)
         self.dropout1 = nn.Dropout(dropout)
-        self.gate = TargetGatingLayer(embed_dim)
+        self.gate = Gate(embed_dim)
 
         self.norm2 = nn.LayerNorm(embed_dim)
-        self.ffn = FFN(embed_dim, ffn_dim, embed_dim, 2, dropout=dropout)
+        self.ffn = SwiGLUFFN(embed_dim, ffn_dim, embed_dim)
         self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, features: Features) -> Features:

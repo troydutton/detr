@@ -8,8 +8,8 @@ from torch.nn import Dropout, LayerNorm, Module
 
 from models.backbone import Features
 from models.layers.deformable_attention import MultiHeadDeformableAttention
-from models.layers.ffn import FFN
-from models.layers.target_gating import TargetGatingLayer
+from models.layers.ffn import SwiGLUFFN
+from models.layers.gate import Gate
 from utils.misc import take_annotation_from
 
 if TYPE_CHECKING:
@@ -54,7 +54,7 @@ class DecoderLayer(Module):
 
         # Feedforward Network
         self.norm3 = LayerNorm(embed_dim)
-        self.ffn = FFN(embed_dim, ffn_dim, embed_dim, 2, dropout=dropout)
+        self.ffn = SwiGLUFFN(embed_dim, ffn_dim, embed_dim)
         self.dropout3 = Dropout(dropout)
 
     def forward(self, queries: Queries, features: Features) -> Queries:
@@ -168,11 +168,11 @@ class DeformableDecoderLayer(Module):
         self.norm2 = LayerNorm(embed_dim)
         self.cross_attention = MultiHeadDeformableAttention(embed_dim, num_deformable_heads, num_levels, num_points)
         self.dropout2 = Dropout(dropout)
-        self.gate = TargetGatingLayer(embed_dim)
+        self.gate = Gate(embed_dim)
 
         # Feedforward Network
         self.norm3 = LayerNorm(embed_dim)
-        self.ffn = FFN(embed_dim, ffn_dim, embed_dim, 2, dropout=dropout)
+        self.ffn = SwiGLUFFN(embed_dim, ffn_dim, embed_dim)
         self.dropout3 = Dropout(dropout)
 
     def forward(self, queries: Queries, features: Features) -> Queries:

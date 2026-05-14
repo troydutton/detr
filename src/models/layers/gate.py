@@ -4,7 +4,7 @@ from torch import Tensor, nn
 from utils.misc import take_annotation_from
 
 
-class TargetGatingLayer(nn.Module):
+class Gate(nn.Module):
     """
     A dynamic gating mechanism used to blend features with their residual updates.
 
