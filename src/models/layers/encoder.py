@@ -1,10 +1,11 @@
 from torch import nn
 
 from models.backbone import Features
-from models.layers.deformable_attention import MultiHeadDeformableAttention
-from models.layers.ffn import SwiGLUFFN
-from models.layers.gate import Gate
 from utils.misc import take_annotation_from
+
+from .deformable_attention import MultiHeadDeformableAttention
+from .ffn import SwiGLUFFN
+from .gate import Gate
 
 
 class EncoderLayer(nn.Module):

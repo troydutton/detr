@@ -2,7 +2,7 @@ import torch
 from torch import Tensor
 from torchvision.ops.boxes import box_convert
 
-from utils.boxes import clamp_boxes
+from .boxes import clamp_boxes
 
 
 def make_edge_offset_weights(

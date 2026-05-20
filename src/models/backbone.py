@@ -6,10 +6,11 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from models.dinov2 import Dinov2WithRegistersModel
-from models.layers.positional_embedding import build_pos_embed
-from models.projector import Projector
 from utils.misc import take_annotation_from
+
+from .dinov2 import Dinov2WithRegistersModel
+from .layers.positional_embedding import build_pos_embed
+from .projector import Projector
 
 logger = logging.getLogger("detr")
 

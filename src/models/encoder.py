@@ -1,8 +1,9 @@
 from hydra.utils import instantiate
 from torch import nn
 
-from models.backbone import Features
 from utils.misc import take_annotation_from
+
+from .backbone import Features
 
 
 class TransformerEncoder(nn.Module):

@@ -9,8 +9,9 @@ from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 from torchvision.ops import box_convert
 
-from evaluators.evaluator import Evaluator
 from utils.misc import silence_stdout
+
+from .evaluator import Evaluator
 
 if TYPE_CHECKING:
     from data import Target

@@ -9,12 +9,13 @@ from torch.nn import LayerNorm, Linear, Module, ModuleList, Sequential
 from torchvision.ops.boxes import box_convert
 
 from data.coco_dataset import Target
-from models.backbone import Features
-from models.layers.ffn import FFN
-from models.layers.positional_embedding import build_pos_embed
 from utils.boxes import add_box_offsets, clamp_boxes
 from utils.edges import add_edge_offset, make_edge_offset_weights
 from utils.misc import take_annotation_from
+
+from .backbone import Features
+from .layers.ffn import FFN
+from .layers.positional_embedding import build_pos_embed
 
 
 @dataclass

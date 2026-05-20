@@ -24,10 +24,11 @@ def draw_annotations(
         image: Image to draw on.
         boxes: Bounding boxes in `box_format` format.
         labels: List of class labels corresponding to the boxes.
-        scores: List of confidence scores for each box.
-        color_map: A dictionary mapping labels to specific colors. If None, random colors are assigned.
-        box_format: Format of the bounding boxes ("xywh", "cxcywh", etc.).
-        normalized_boxes: Whether the boxes are normalized to [0, 1].
+        scores: List of confidence scores for each box, optional.
+        color_map: A dictionary mapping labels to specific colors, optional.
+        box_format: Format of the bounding boxes ("xywh", "cxcywh", etc.), optional.
+        normalized_boxes: Whether the boxes are normalized to [0, 1], optional.
+
     Returns:
         image: The image with drawn predictions.
     """
@@ -42,7 +43,6 @@ def draw_annotations(
     # Scale boxes by the image size
     if normalized_boxes:
         width, height = image.size
-
         boxes = boxes.clone() * torch.tensor([width, height, width, height])
 
     # Generate random colors if no color map is provided

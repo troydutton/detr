@@ -7,14 +7,16 @@ import torch.nn.functional as F
 from accelerate import Accelerator
 from torch import Tensor
 
-from criterion.hungarian_matcher import HungarianMatcher
 from utils.boxes import paired_box_iou, paired_generalized_box_iou
 from utils.edges import calculate_edge_offset_probs, make_edge_offset_weights
 
+from .hungarian_matcher import HungarianMatcher
+
 if TYPE_CHECKING:
-    from criterion.hungarian_matcher import MatchIndices
     from data import Target
     from models import Predictions
+
+    from .hungarian_matcher import MatchIndices
 
 
 class Criterion:

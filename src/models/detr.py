@@ -6,12 +6,13 @@ import torch
 from torch import Tensor, nn
 
 from data.coco_dataset import Target
-from models.backbone import Backbone
-from models.decoder import Predictions, TransformerDecoder
-from models.encoder import TransformerEncoder
 from utils.checkpoint import load_state_dict
 from utils.misc import take_annotation_from
 from utils.postprocess import Detections, postprocess
+
+from .backbone import Backbone
+from .decoder import Predictions, TransformerDecoder
+from .encoder import TransformerEncoder
 
 VALID_WEIGHT_FILES = ["ema_model.safetensors", "model.safetensors"]
 
