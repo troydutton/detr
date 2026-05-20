@@ -6,12 +6,14 @@ defaults:
   - optimizer: adamw
   - scheduler: step
   - criterion: set
-  - ema: warmup 
+  - ema: warmup
   - _self_
 
 train:
   output_dir: /path/to/output/dir
   num_epochs: 24
+  num_warmup_epochs: 2
+  num_cooldown_epochs: 12
   num_finetune_epochs: 2
   batch_size: 8
   num_workers: 4

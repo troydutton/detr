@@ -15,7 +15,8 @@ from torch.utils.data import DataLoader
 from torchvision.transforms.functional import to_pil_image
 from tqdm import tqdm
 
-from data import ImageDataset, make_normalize_transform
+from data import ImageDataset
+from data.transforms import make_normalize_transform
 from models import DETR
 from utils.checkpoint import load_metadata
 from utils.postprocess import Detections, postprocess

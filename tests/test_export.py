@@ -55,7 +55,7 @@ def test_export(tmp_path: Path, dummy_coco: Path) -> None:
                     "roots": [str(dummy_coco)],
                     "annotation_name": "_annotations.coco.json",
                     "image_directory": "images",
-                    "transforms": {"_target_": "data.make_transformations", "split": "val", "resolution": 64},
+                    "transforms": {"_target_": "data.transforms.make_transformations", "split": "val", "resolution": 64},
                 }
             },
             "model": {

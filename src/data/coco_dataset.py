@@ -12,8 +12,10 @@ from torchvision.ops.boxes import box_convert, clip_boxes_to_image
 from torchvision.transforms.v2.functional import to_dtype, to_image
 from torchvision.tv_tensors import BoundingBoxes, Image
 
-from data.transforms import Transformation
+from utils.boxes import clamp_boxes
 from utils.misc import silence_stdout
+
+from .transforms import Transformation
 
 ImageAnnotations = List[Dict[str, Any]]
 Target = Dict[str, Tensor | BoundingBoxes]
@@ -56,6 +58,9 @@ class CocoDataset(Dataset):
         self.transforms = transforms
         self.image_directory = image_directory
         self.annotation_name = annotation_name
+
+        # Set by the training loop, used to determine which augmentations to apply
+        self.epoch = -1
 
         # Log the roots being loaded, showing up to 3 for brevity
         log_roots = [f"`{str(root)}`" for root in self.roots[:3]]
@@ -113,6 +118,7 @@ class CocoDataset(Dataset):
         # Add image & dataset information
         target["image_id"] = torch.tensor([image_id], dtype=torch.int64)
         target["orig_size"] = torch.tensor([h, w], dtype=torch.int64)
+        target["epoch"] = self.epoch
 
         # Apply the transformations, converting to tensor if no transforms are provided
         if self.transforms is not None:
@@ -123,7 +129,7 @@ class CocoDataset(Dataset):
 
         # Normalize bounding box coordinates to [0, 1]
         h, w = image.shape[-2:]
-        target["boxes"] = target["boxes"] / torch.tensor([w, h, w, h])
+        target["boxes"] = clamp_boxes(target["boxes"] / torch.tensor([w, h, w, h]))
         target["size"] = torch.tensor([h, w], dtype=torch.int64)
 
         return image, target

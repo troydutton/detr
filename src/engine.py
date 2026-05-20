@@ -1,9 +1,8 @@
-from __future__ import annotations
-
+import logging
 import time
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Optional, Tuple, Union
+from typing import Dict, Tuple, Union
 
 import torch
 import wandb
@@ -15,12 +14,10 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from criterion import Criterion
+from data import CocoDataset
 from evaluators import Evaluator
 from models import DETR
 from utils.checkpoint import save_checkpoint
-
-if TYPE_CHECKING:
-    from data.transforms import Transformation
 
 
 def train(
@@ -33,14 +30,15 @@ def train(
     train_data: DataLoader,
     finetune_data: DataLoader,
     val_data: DataLoader,
-    num_epochs: int,
     accelerator: Accelerator,
     output_dir: Union[str, Path],
-    start_epoch: int = 0,
+    num_epochs: int,
     num_finetune_epochs: int = 0,
+    num_warmup_epochs: int = 0,
+    num_cooldown_epochs: int = 0,
+    start_epoch: int = 0,
     save_period: int = 1,
     max_grad_norm: float = 0.1,
-    image_resizer: Optional[Transformation] = None,
 ) -> None:
     """
     Train and evaluate a model for a number of epochs.
@@ -55,18 +53,31 @@ def train(
         train_data: Training data.
         finetune_data: Fine-tuning data.
         val_data: Validation data.
-        num_epochs: Number of epochs to train for.
         accelerator: Accelerator object.
-        output_dir: Parent directory to save the weights to.
-        start_epoch: Epoch to start training from, optional.
+        num_epochs: Number of epochs to train for.
         num_finetune_epochs: Number of epochs to fine-tune for at the end of training, optional.
+        num_warmup_epochs: Number of epochs at the start of training to skip heavy augmentations, optional.
+        num_cooldown_epochs: Number of epochs at the end of training to skip heavy augmentations, optional.
+        start_epoch: Epoch to start training from, optional.
+        output_dir: Parent directory to save the weights to.
         save_period: Period (in epochs) to save the model weights, optional.
         max_grad_norm: Maximum gradient norm for clipping, optional.
-        image_resizer: Transformation to resize images at the batch level, optional.
     """
 
     for epoch in range(start_epoch, num_epochs):
         epoch_start_time = time.perf_counter()
+
+        if epoch == num_warmup_epochs:
+            logging.info("Enabling heavy augmentations.")
+        elif epoch == num_epochs - num_cooldown_epochs:
+            logging.info("Disabling heavy augmentations.")
+        if epoch == num_epochs - num_finetune_epochs:
+            logging.info("Disabling all augmentations and multi-scale resizing.")
+
+        data = train_data if epoch < num_epochs - num_finetune_epochs else finetune_data
+
+        if isinstance(data.dataset, CocoDataset):
+            data.dataset.epoch = epoch
 
         # Train for a single epoch
         train_one_epoch(
@@ -75,11 +86,10 @@ def train(
             optimizer=optimizer,
             criterion=criterion,
             scheduler=scheduler,
-            data=train_data if epoch < num_epochs - num_finetune_epochs else finetune_data,
+            data=data,
             epoch=epoch,
             accelerator=accelerator,
             max_grad_norm=max_grad_norm,
-            image_resizer=image_resizer if epoch < num_epochs - num_finetune_epochs else None,
         )
 
         # Evaluate the model
@@ -122,7 +132,6 @@ def train_one_epoch(
     accelerator: Accelerator,
     *,
     max_grad_norm: float = 0.1,
-    image_resizer: Optional[Transformation] = None,
 ) -> None:
     """
     Train a model for a single epoch.
@@ -137,19 +146,14 @@ def train_one_epoch(
         epoch: Current epoch.
         accelerator: Accelerator object.
         max_grad_norm: Maximum gradient norm for clipping, optional.
-        image_resizer: Transformation to resize images at the batch level, optional.
     """
 
     # Set the model to training mode
     model.train()
 
-    data = tqdm(data, desc=f"Training (Epoch {epoch + 1})", dynamic_ncols=True, disable=not accelerator.is_main_process)
+    data = tqdm(data, desc=f"Training (Epoch {epoch + 1})", dynamic_ncols=True, disable=not accelerator.is_main_process, delay=0.5)
     for images, targets in data:
         with accelerator.accumulate(model):
-            # Batch resize
-            if image_resizer is not None:
-                images, targets = image_resizer(images, targets)
-
             # Zero the gradients
             optimizer.zero_grad(set_to_none=True)
 

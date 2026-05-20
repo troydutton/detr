@@ -8,7 +8,7 @@ from torch import Tensor
 from torch.utils.data import Dataset
 from torchvision.transforms.v2.functional import to_dtype, to_image
 
-from data.transforms import Transformation
+from .transforms import Transformation
 
 Args = Dict[str, Union[Any, "Args"]]
 

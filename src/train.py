@@ -16,7 +16,6 @@ from torch.utils.data import DataLoader
 
 from criterion import Criterion
 from data import CocoDataset, collate_fn
-from data.transforms import DiscreteRandomResize
 from engine import train
 from evaluators import CocoEvaluator
 from models import DETR
@@ -55,7 +54,6 @@ def main(args: DictConfig) -> None:
     finetune_dataset = copy.copy(train_dataset)
     finetune_dataset.transforms = instantiate(args["transforms"]["finetune"])
     val_dataset: CocoDataset = instantiate(args["dataset"]["val"])
-    image_resizer = DiscreteRandomResize(args["transforms"]["train"]["resolution"])
 
     # Create dataloaders
     batch_size, num_workers = args["train"]["batch_size"], args["train"]["num_workers"]
@@ -65,7 +63,7 @@ def main(args: DictConfig) -> None:
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        collate_fn=collate_fn,
+        collate_fn=instantiate(args["transforms"]["batch"]),
         pin_memory=True,
     )
 
@@ -155,7 +153,6 @@ def main(args: DictConfig) -> None:
         val_data=val_data,
         finetune_data=finetune_data,
         accelerator=accelerator,
-        image_resizer=image_resizer,
         **args["train"],
     )
 

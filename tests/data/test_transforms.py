@@ -9,7 +9,9 @@ import torch
 from PIL import Image
 from torchvision.tv_tensors import BoundingBoxes, BoundingBoxFormat
 
-from data.transforms import DiscreteRandomResize, RandomErasingBoxAware, make_transformations
+from data.transforms import make_transformations
+from data.transforms.random_erasing import RandomErasingBoxAware
+from data.transforms.random_resize import DiscreteRandomResize
 
 
 def test_random_erasing_box_aware_erasing() -> None:

@@ -5,7 +5,8 @@ import pytest
 import torch
 from PIL import Image
 
-from data import CocoDataset, make_transformations
+from data import CocoDataset
+from data.transforms import make_transformations
 
 
 @pytest.fixture
