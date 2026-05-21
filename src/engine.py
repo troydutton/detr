@@ -2,7 +2,7 @@ import logging
 import time
 from datetime import timedelta
 from pathlib import Path
-from typing import Dict, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 
 import torch
 import wandb
@@ -15,6 +15,7 @@ from tqdm import tqdm
 
 from criterion import Criterion
 from data import CocoDataset
+from data.transforms import DiscreteRandomResize
 from evaluators import Evaluator
 from models import DETR
 from utils.checkpoint import save_checkpoint
@@ -30,6 +31,7 @@ def train(
     train_data: DataLoader,
     finetune_data: DataLoader,
     val_data: DataLoader,
+    batch_resize: DiscreteRandomResize,
     accelerator: Accelerator,
     output_dir: Union[str, Path],
     num_epochs: int,
@@ -43,6 +45,16 @@ def train(
     """
     Train and evaluate a model for a number of epochs.
 
+
+    The training schedule consists of warmup, active, cooldown, and finetuning periods defined below.
+
+                    0               [W]                         [N - C]         [N - F]             [N]
+                    |----------------|-----------------------------|---------------|-----------------|
+    Heavy Aug.      |    [ OFF ]     |           [ ON ]            |    [ OFF ]    |     [ OFF ]     |
+                    |................|.............................|...............|.................|
+    Multi-Scale     |    [ ON ]      |           [ ON ]            |    [ ON ]     |     [ OFF ]     |
+    Resizing        '----------------'-----------------------------'---------------'-----------------'
+
     Args:
         model: Model to train.
         ema_model: EMA model to update and evaluate.
@@ -53,6 +65,7 @@ def train(
         train_data: Training data.
         finetune_data: Fine-tuning data.
         val_data: Validation data.
+        batch_resize: Batch-level random resize transformation.
         accelerator: Accelerator object.
         num_epochs: Number of epochs to train for.
         num_finetune_epochs: Number of epochs to fine-tune for at the end of training, optional.
@@ -75,6 +88,7 @@ def train(
             logging.info("Disabling all augmentations and multi-scale resizing.")
 
         data = train_data if epoch < num_epochs - num_finetune_epochs else finetune_data
+        batch_resize = batch_resize if epoch < num_epochs - num_finetune_epochs else None
 
         if isinstance(data.dataset, CocoDataset):
             data.dataset.epoch = epoch
@@ -90,6 +104,7 @@ def train(
             epoch=epoch,
             accelerator=accelerator,
             max_grad_norm=max_grad_norm,
+            batch_resize=batch_resize,
         )
 
         # Evaluate the model
@@ -130,6 +145,7 @@ def train_one_epoch(
     data: DataLoader,
     epoch: int,
     accelerator: Accelerator,
+    batch_resize: Optional[DiscreteRandomResize] = None,
     *,
     max_grad_norm: float = 0.1,
 ) -> None:
@@ -154,6 +170,10 @@ def train_one_epoch(
     data = tqdm(data, desc=f"Training (Epoch {epoch + 1})", dynamic_ncols=True, disable=not accelerator.is_main_process, delay=0.5)
     for images, targets in data:
         with accelerator.accumulate(model):
+            # Apply batch-level random resizing if enabled
+            if batch_resize is not None:
+                images, targets = batch_resize(images, targets)
+
             # Zero the gradients
             optimizer.zero_grad(set_to_none=True)
 

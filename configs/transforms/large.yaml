@@ -1,22 +1,7 @@
 train:
   _target_: data.transforms.make_transformations
   split: train
-  mosaic:
-    num_epochs: ${train.num_epochs}
-    num_warmup_epochs: ${train.num_warmup_epochs}
-    num_cooldown_epochs: ${train.num_cooldown_epochs}
-    p: 0.5
   resolution: [384, 448, 512, 576, 640, 704, 768, 832, 896, 960, 1024]
-
-batch:
-  _target_: data.transforms.BatchTransforms
-  num_epochs: ${train.num_epochs}
-  num_warmup_epochs: ${train.num_warmup_epochs}
-  num_cooldown_epochs: ${train.num_cooldown_epochs}
-  num_finetune_epochs: ${train.num_finetune_epochs}
-  resolution: ${transforms.train.resolution}
-  blend_probability: 0.5
-  copy_probability: 0.25
 
 finetune:
   _target_: data.transforms.make_transformations

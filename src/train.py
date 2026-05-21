@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader
 
 from criterion import Criterion
 from data import CocoDataset, collate_fn
+from data.transforms import DiscreteRandomResize
 from engine import train
 from evaluators import CocoEvaluator
 from models import DETR
@@ -50,6 +51,9 @@ def main(args: DictConfig) -> None:
     accelerator.wait_for_everyone()
 
     # Create datasets (config/dataset/*.yaml)
+    args["transforms"]["train"]["num_epochs"] = args["train"]["num_epochs"]
+    args["transforms"]["train"]["num_warmup_epochs"] = args["train"]["num_warmup_epochs"]
+    args["transforms"]["train"]["num_cooldown_epochs"] = args["train"]["num_cooldown_epochs"]
     train_dataset: CocoDataset = instantiate(args["dataset"]["train"])
     finetune_dataset = copy.copy(train_dataset)
     finetune_dataset.transforms = instantiate(args["transforms"]["finetune"])
@@ -63,9 +67,10 @@ def main(args: DictConfig) -> None:
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        collate_fn=instantiate(args["transforms"]["batch"]),
+        collate_fn=collate_fn,
         pin_memory=True,
     )
+    batch_resize = DiscreteRandomResize(resolutions=args["transforms"]["train"]["resolution"])
 
     finetune_data = DataLoader(
         finetune_dataset,
@@ -150,8 +155,9 @@ def main(args: DictConfig) -> None:
         criterion=criterion,
         evaluator=evaluator,
         train_data=train_data,
-        val_data=val_data,
         finetune_data=finetune_data,
+        val_data=val_data,
+        batch_resize=batch_resize,
         accelerator=accelerator,
         **args["train"],
     )

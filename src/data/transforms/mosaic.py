@@ -23,24 +23,25 @@ class Mosaic:
 
     Args:
         p: The probability of applying mosaic augmentation to each image.
-        n: The number of images to use in the mosaic (default is 2, creating a 2x2 mosaic).
+        num_tiles: The number of tiles on each side of the mosaic (e.g. 2 creates a 2x2 mosaic).
         num_epochs: Total number of epochs in training.
-        num_warmup_epochs: Number of epochs at the start of training to skip heavy augmentations.
-        num_cooldown_epochs: Number of epochs at the end of training to skip heavy augmentations.
+        num_warmup_epochs: Number of epochs at the start of training to skip the transformation.
+        num_cooldown_epochs: Number of epochs at the end of training to skip the transformation.
         max_cache_size: Maximum number of images to keep in the cache.
     """
 
     def __init__(
         self,
         p: float = 0.5,
-        n: int = 2,
+        num_tiles: int = 2,
         num_epochs: int = 0,
         num_warmup_epochs: int = 0,
         num_cooldown_epochs: int = 0,
         max_cache_size: int = 160,
     ) -> None:
 
-        self.p, self.n = p, n
+        self.p = p
+        self.num_tiles = num_tiles
         self.num_epochs = num_epochs
         self.num_warmup_epochs = num_warmup_epochs
         self.num_cooldown_epochs = num_cooldown_epochs
@@ -69,7 +70,7 @@ class Mosaic:
             return image, annotations
 
         # Skip if the cache doesn't have enough images to build a mosaic
-        if len(self.cache) < self.n**2 - 1:
+        if len(self.cache) < self.num_tiles**2 - 1:
             return image, annotations
 
         # Skip w.p. 1 - p when active
@@ -80,15 +81,15 @@ class Mosaic:
         _, height, width = image.shape
 
         # Calculate tile size and offsets for placing images in the mosaic
-        tile_height, tile_width = height // self.n, width // self.n
-        tile_offsets = [(x * tile_width, y * tile_height) for x in range(self.n) for y in range(self.n)]
+        tile_height, tile_width = height // self.num_tiles, width // self.num_tiles
+        tile_offsets = [(x * tile_width, y * tile_height) for x in range(self.num_tiles) for y in range(self.num_tiles)]
 
         # Blank canvas to build the mosaic
         canvas = torch.zeros_like(image)
         canvas_annotations = {k: v if k not in LABEL_KEYS else [] for k, v in annotations.items()}
 
         # Sample extra images from the cache (cloning to avoid mutating cached data)
-        extra_samples: List[Tuple[Tensor, Target]] = random.sample(self.cache, self.n**2 - 1)
+        extra_samples: List[Tuple[Tensor, Target]] = random.sample(self.cache, self.num_tiles**2 - 1)
         extra_samples = [self._clone_sample(sample) for sample in extra_samples]
 
         all_images = torch.stack([image] + [extra_image for extra_image, _ in extra_samples])
@@ -102,7 +103,7 @@ class Mosaic:
             canvas[:, offset_y : offset_y + tile_height, offset_x : offset_x + tile_width] = tile_image
 
             # Adjust bounding boxes
-            boxes = tile_annotations["boxes"] / self.n
+            boxes = tile_annotations["boxes"] / self.num_tiles
             boxes[:, 0] += offset_x
             boxes[:, 1] += offset_y
 

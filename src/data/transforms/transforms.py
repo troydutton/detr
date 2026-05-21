@@ -25,19 +25,22 @@ class Transformation(Protocol):
 def make_transformations(
     split: str,
     resolution: Union[int, List[int]],
+    num_epochs: int = 0,
+    num_warmup_epochs: int = 0,
+    num_cooldown_epochs: int = 0,
     *,
     normalize: bool = True,
-    **kwargs,
 ) -> Transformation:
     """
-    Create a transform pipeline.
+    Create a transformation pipeline.
 
     Args:
         split: Which split to build transforms for. ("train", "val", or "test")
         resolution: Base image resolution used to compute resize sizes.
+        num_epochs: Total number of epochs, optional.
+        num_warmup_epochs: Number of epochs to skip heavy augmentations for at the start of training, optional.
+        num_cooldown_epochs: Number of epochs to skip heavy augmentations for at the end of training, optional.
         normalize: Whether to normalize the image, optional.
-        kwargs: Arguments to construct the transformations.
-            See `data.transforms.mosaic.Mosaic`.
 
     Returns:
         transformations: A callable that accepts an (image, annotations) pair, and returns the transformed pair.
@@ -64,7 +67,7 @@ def make_transformations(
                 T.RandomHorizontalFlip(),
                 RandomErasingBoxAware(p=0.33, value="random"),
                 T.RandomPhotometricDistort(),
-                Mosaic(**kwargs.get("mosaic", {})),
+                Mosaic(num_epochs=num_epochs, num_warmup_epochs=num_warmup_epochs, num_cooldown_epochs=num_cooldown_epochs),
                 T.RandomApply([T.RandomZoomOut(side_range=(1.0, 2.0), p=1.0), T.Resize((resolution, resolution))], p=0.5),
                 T.ToDtype(torch.float32, scale=True),
                 normalize_transform,
