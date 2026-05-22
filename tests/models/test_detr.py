@@ -1,6 +1,9 @@
 import torch
 
+from criterion import Criterion
 from models import DETR
+from models.backbone import Features
+from models.decoder import TransformerDecoder
 from models.detr import Detections
 
 
@@ -90,6 +93,52 @@ def test_detr_forward() -> None:
     # Check that box coordinates are in [0, 1]
     assert output.boxes.min() >= 0.0
     assert output.boxes.max() <= 1.0
+
+
+def test_empty_training_batch_keeps_decoder_parameters_used() -> None:
+    """
+    All-empty local batches should not create rank-dependent unused parameters.
+    """
+
+    embed_dim = 16
+    num_bins = 4
+
+    decoder = TransformerDecoder(
+        embed_dim=embed_dim,
+        num_classes=3,
+        num_layers=2,
+        num_queries=5,
+        num_groups=1,
+        num_denoise_queries=10,
+        num_bins=num_bins,
+        two_stage=True,
+        denoise_queries=True,
+        layer={
+            "_target_": "models.layers.decoder.DecoderLayer",
+            "embed_dim": embed_dim,
+            "ffn_dim": 32,
+            "num_heads": 4,
+            "dropout": 0.0,
+        },
+    )
+    decoder.train()
+
+    features = Features(
+        embed=torch.randn(1, 8, embed_dim),
+        pos=torch.randn(1, 8, embed_dim),
+        reference=torch.rand(1, 8, 2),
+        levels=torch.zeros(8, dtype=torch.long),
+        dimensions=torch.tensor([[8, 1]]),
+    )
+    targets = [{"labels": torch.empty(0, dtype=torch.int64), "boxes": torch.empty((0, 4), dtype=torch.float32)}]
+
+    criterion = Criterion(loss_weights={"box": 5.0, "giou": 2.0, "class": 1.0, "localization": 0.15}, num_bins=num_bins)
+    losses = criterion(decoder(features, targets), targets)
+    losses["overall"].backward()
+
+    unused_parameters = [name for name, parameter in decoder.named_parameters() if parameter.requires_grad and parameter.grad is None]
+
+    assert unused_parameters == []
 
 
 def test_detr_predict() -> None:

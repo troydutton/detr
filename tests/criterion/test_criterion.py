@@ -239,3 +239,42 @@ class TestCriterion:
 
         for key, value in losses.items():
             assert torch.isfinite(value), f"Loss {key} is not finite: {value.item()}"
+
+    def test_empty_targets_keep_regression_losses_connected(self) -> None:
+        """
+        Empty local batches should still mark regression predictions as used.
+        """
+
+        batch_size = 1
+        num_layers = 1
+        num_groups = 1
+        num_queries = 5
+        num_classes = 4
+        num_bins = 4
+
+        decoder_preds = Predictions(
+            boxes=torch.rand((batch_size, num_layers, num_groups, num_queries, 4), requires_grad=True),
+            class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes), requires_grad=True),
+            edge_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)), requires_grad=True),
+        )
+
+        targets: List[Dict[str, Tensor]] = [
+            {
+                "labels": torch.empty(0, dtype=torch.int64),
+                "boxes": torch.empty((0, 4), dtype=torch.float32),
+            }
+        ]
+
+        criterion = Criterion(loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0}, num_bins=num_bins)
+        losses = criterion((decoder_preds, None, None), targets)
+
+        assert losses["box"].requires_grad
+        assert losses["giou"].requires_grad
+        assert losses["localization"].requires_grad
+
+        losses["overall"].backward()
+
+        assert decoder_preds.boxes.grad is not None
+        assert decoder_preds.edge_logits.grad is not None
+        assert torch.count_nonzero(decoder_preds.boxes.grad) == 0
+        assert torch.count_nonzero(decoder_preds.edge_logits.grad) == 0
