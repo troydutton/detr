@@ -375,6 +375,9 @@ class TransformerDecoder(Module):
 
         # Skip denoising if there are no objects in the batch
         if sum(objects_per_image) == 0:
+            # Keep denoising parameters in the graph for DDP rank consistency
+            # without changing the object-query values.
+            queries.embed = queries.embed + (self.label_embed.weight.sum() + self.denoise_embed.weight.sum()) * 0.0
             return queries
 
         # Generate noisy versions of the target boxes and labels

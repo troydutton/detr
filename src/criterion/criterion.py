@@ -184,9 +184,11 @@ class Criterion:
         prediction_boxes = predictions.boxes[prediction_indices]  # (num_matches, 4)
         target_boxes = torch.cat([t["boxes"][i] for t, i in zip(targets, target_indices)])  # (num_matches, 4)
 
-        # No targets, return zero losses
+        # No targets: preserve a zero-valued autograd path so DDP sees the box
+        # head as used on ranks whose local batch has no ground-truth boxes.
         if target_boxes.numel() == 0:
-            return torch.tensor(0.0, device=target_boxes.device), torch.tensor(0.0, device=target_boxes.device)
+            zero_loss = prediction_boxes.sum() * 0.0
+            return zero_loss, zero_loss
 
         # Minimize L1 Distance
         box_loss = F.l1_loss(prediction_boxes, target_boxes, reduction="sum")
@@ -285,11 +287,8 @@ class Criterion:
             localization_loss: FGL loss (summed).
         """
 
-        # Get batch information
-        device = predictions.boxes.device
-
         if predictions.edge_logits is None:
-            return torch.tensor(0.0, device=device)
+            return predictions.boxes.sum() * 0.0
 
         # Separate the first layer predictions, which serve as fixed references
         prediction_indices, target_indices = matched_indices
@@ -309,9 +308,10 @@ class Criterion:
         prediction_logits = predictions.edge_logits[*prediction_indices]
         target_boxes = torch.cat([t["boxes"][i] for t, i in zip(targets, target_indices)])
 
-        # No targets, return zero losses
+        # No targets: keep the graph connected to localization predictions for
+        # the same rank-consistency reason as the box losses above.
         if target_boxes.numel() == 0:
-            return torch.tensor(0.0, device=references.device)
+            return (prediction_boxes.sum() + prediction_logits.sum()) * 0.0
 
         # Calculate the target distribution for each edge
         with torch.no_grad():
