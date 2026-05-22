@@ -133,7 +133,13 @@ def test_empty_training_batch_keeps_decoder_parameters_used() -> None:
     targets = [{"labels": torch.empty(0, dtype=torch.int64), "boxes": torch.empty((0, 4), dtype=torch.float32)}]
 
     criterion = Criterion(loss_weights={"box": 5.0, "giou": 2.0, "class": 1.0, "localization": 0.15}, num_bins=num_bins)
-    losses = criterion(decoder(features, targets), targets)
+    decoder_predictions, encoder_predictions, denoise_predictions = decoder(features, targets)
+
+    assert decoder_predictions is not None
+    assert encoder_predictions is not None
+    assert denoise_predictions is not None
+
+    losses = criterion((decoder_predictions, encoder_predictions, denoise_predictions), targets)
     losses["overall"].backward()
 
     unused_parameters = [name for name, parameter in decoder.named_parameters() if parameter.requires_grad and parameter.grad is None]

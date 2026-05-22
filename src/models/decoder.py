@@ -373,13 +373,6 @@ class TransformerDecoder(Module):
         batch_size, _, _ = queries.embed.shape
         objects_per_image = [min(len(t["labels"]), self.num_denoise_queries // 2) for t in targets]
 
-        # Skip denoising if there are no objects in the batch
-        if sum(objects_per_image) == 0:
-            # Keep denoising parameters in the graph for DDP rank consistency
-            # without changing the object-query values.
-            queries.embed = queries.embed + (self.label_embed.weight.sum() + self.denoise_embed.weight.sum()) * 0.0
-            return queries
-
         # Generate noisy versions of the target boxes and labels
         query_embed = torch.zeros(batch_size, self.num_denoise_queries, self.embed_dim, device=device)
         query_pos = torch.zeros(batch_size, self.num_denoise_queries, self.embed_dim, device=device)
@@ -437,8 +430,9 @@ class TransformerDecoder(Module):
             denoise_group_indices = torch.arange(num_queries, device=device) // (2 * num_objects)
             attention_mask[i, :num_queries, :num_queries] = denoise_group_indices[:, None] != denoise_group_indices[None, :]
 
-        # Add a learnable task embedding to distinguish between object and denoising queries
-        query_embed += self.denoise_embed.weight[None, ...]
+        # Add a learnable task embedding to distinguish between object and denoising queries.
+        # Keep label embeddings in the graph when this rank has only padded denoising queries.
+        query_embed += self.denoise_embed.weight[None, ...] + self.label_embed.weight.sum() * 0.0
 
         # Append the denoising queries onto the object queries
         queries.embed = torch.cat([queries.embed, query_embed], dim=1)
