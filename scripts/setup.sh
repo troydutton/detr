@@ -6,7 +6,13 @@ set -eo pipefail
 ENV_NAME="detr"
 
 # Bring conda into the path
-CONDA_PATH=$(conda info --base)
+if [ -d "$HOME/miniconda3/" ]; then
+    CONDA_PATH="$HOME/miniconda3"
+elif [ -d "$HOME/anaconda3/" ]; then
+    CONDA_PATH="$HOME/anaconda3"
+else
+    echo "No conda installation found."; exit 1
+fi
 source "$CONDA_PATH/etc/profile.d/conda.sh"
 
 # Environment creation
