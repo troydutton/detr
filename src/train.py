@@ -1,5 +1,6 @@
 import copy
 import logging
+from math import ceil
 from pathlib import Path
 from typing import Any, Dict, Union
 
@@ -120,7 +121,8 @@ def main(args: DictConfig) -> None:
     optimizer: Optimizer = instantiate(args["optimizer"], _convert_="all")
 
     # Create learning rate scheduler (config/scheduler/*.yaml)
-    args["scheduler"] = prepare_scheduler_arguments(args["scheduler"], steps_per_epoch=len(train_data))
+    steps_per_epoch = ceil(len(train_data) / accelerator.gradient_accumulation_steps)
+    args["scheduler"] = prepare_scheduler_arguments(args["scheduler"], steps_per_epoch=steps_per_epoch)
     scheduler: _LRScheduler = instantiate(args["scheduler"], optimizer=optimizer)
 
     # Distribute training components
