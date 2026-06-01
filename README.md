@@ -2,13 +2,13 @@
 Transformer-based object detection
 
 # Development
-The instructions for setting up the development environment and running unit tests are provided below.
+The instructions for setting up the development environment are provided below.
 
 ## Setup
-The setup script initializes the developer environment in an idempotent manner.
+The setup script creates a new conda environment, installs the required dependencies, and sets up pre-commit hooks. It should be run from the root of the repository, and can be run multiple times without issue.
 
 ```bash
-bash ./scripts/setup.sh
+./scripts/setup.sh
 ```
 
 After execution, the environment can be activated using `conda`.
@@ -18,11 +18,24 @@ conda activate detr
 ```
 
 ## Testing
-Unit tests use the `pytest` framework and can be found in `tests/`.
+The codebase uses `pytest` for testing. It is run as part of the pre-commit hooks, but can also be run manually.
 
-Command:
 ```bash
-conda activate detr && pytest tests/
+pytest tests/
+```
+
+## Formatting
+The codebase uses `black` for formatting. It is run as part of the pre-commit hooks, but can also be run manually.
+
+```bash
+black src/ tests/
+```
+
+## Linting
+The codebase uses `ruff` for linting. It is run as part of the pre-commit hooks, but can also be run manually.
+
+```bash
+ruff check --fix src/ tests/
 ```
 
 # Usage
@@ -36,7 +49,7 @@ accelerate launch src/train.py <additional-args>
 ```
 
 ## Evaluation
-To evaluate a model, update `config/evaluate.yaml` and run `eval.py`.
+To evaluate a model, update `config/evaluate.yaml` and run `evaluate.py`.
 
 ```bash
 accelerate launch src/evaluate.py <additional-args>
