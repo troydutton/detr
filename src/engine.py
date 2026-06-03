@@ -41,6 +41,8 @@ def train(
     start_epoch: int = 0,
     save_period: int = 1,
     max_grad_norm: float = 0.1,
+    *,
+    enable_wandb: bool = True,
 ) -> None:
     """
     Train and evaluate a model for a number of epochs.
@@ -75,6 +77,7 @@ def train(
         output_dir: Parent directory to save the weights to.
         save_period: Period (in epochs) to save the model weights, optional.
         max_grad_norm: Maximum gradient norm for clipping, optional.
+        enable_wandb: Whether to log to Weights & Biases, optional.
     """
 
     for epoch in range(start_epoch, num_epochs):
@@ -105,6 +108,7 @@ def train(
             accelerator=accelerator,
             max_grad_norm=max_grad_norm,
             batch_resize=batch_resize,
+            enable_wandb=enable_wandb,
         )
 
         # Evaluate the model
@@ -120,13 +124,13 @@ def train(
         epoch_duration = time.perf_counter() - epoch_start_time
 
         # Log the losses, metrics, and learning rates for this epoch
-        if accelerator.is_main_process:
+        if accelerator.is_main_process and enable_wandb:
             learning_rates = {str(group["name"]).removesuffix(".no_decay"): group["lr"] for group in optimizer.param_groups}
-            wandb.log({"val": {"loss": val_losses, "metric": val_metrics}, "lr": learning_rates}, step=wandb.run.step)
+            wandb.log({"val": {"loss": val_losses, "metric": val_metrics}, "lr": learning_rates}, commit=False)
 
-            print(f" Epoch {epoch + 1} | {timedelta(seconds=int(epoch_duration))} ".center(65, "="))
-            print(", ".join(f"{k}: {v * 100:.1f}" for k, v in val_metrics["overall"].items()))
-            print("=" * 65)
+        logging.info(f" Epoch {epoch + 1} | {timedelta(seconds=int(epoch_duration))} ".center(65, "="))
+        logging.info(", ".join(f"{k}: {v * 100:.1f}" for k, v in val_metrics["overall"].items()))
+        logging.info("=" * 65)
 
         # Save the model weights
         if (epoch + 1) % save_period == 0 or (epoch + 1) == num_epochs:
@@ -146,8 +150,9 @@ def train_one_epoch(
     epoch: int,
     accelerator: Accelerator,
     batch_resize: Optional[DiscreteRandomResize] = None,
-    *,
     max_grad_norm: float = 0.1,
+    *,
+    enable_wandb: bool = True,
 ) -> None:
     """
     Train a model for a single epoch.
@@ -161,13 +166,15 @@ def train_one_epoch(
         data: Training data.
         epoch: Current epoch.
         accelerator: Accelerator object.
+        batch_resize: Batch-level random resize transformation, optional.
         max_grad_norm: Maximum gradient norm for clipping, optional.
+        enable_wandb: Whether to log to Weights & Biases, optional.
     """
 
     # Set the model to training mode
     model.train()
 
-    data = tqdm(data, desc=f"Training (Epoch {epoch + 1})", dynamic_ncols=True, disable=not accelerator.is_main_process, delay=0.5)
+    data = tqdm(data, desc=f"Training (Epoch {epoch + 1})", dynamic_ncols=True, disable=not accelerator.is_main_process, smoothing=0)
     for images, targets in data:
         with accelerator.accumulate(model):
             # Apply batch-level random resizing if enabled
@@ -200,9 +207,8 @@ def train_one_epoch(
                 ema_model.update_parameters(model)
 
             # Log the loss
-            if accelerator.is_main_process and accelerator.sync_gradients:
-                step_size = len(images) * accelerator.num_processes * accelerator.gradient_accumulation_steps
-                wandb.log({"train": {"loss": losses}}, step=wandb.run.step + step_size)
+            if accelerator.is_main_process and accelerator.sync_gradients and enable_wandb:
+                wandb.log({"train": {"loss": losses}})
 
     accelerator.wait_for_everyone()
 

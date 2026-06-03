@@ -21,4 +21,5 @@ train:
   max_grad_norm: 0.1
   grad_accum_steps: 1
   random_seed: 42
+  enable_wandb: True
   checkpoint: Null

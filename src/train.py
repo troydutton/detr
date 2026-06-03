@@ -42,11 +42,15 @@ def main(args: DictConfig) -> None:
     # Reproducibility
     set_seed(args["train"]["random_seed"], device_specific=True)
 
-    # Initialize Weights & Biases
+    # Create a directory for weights and arguments
     output_dir = Path(args["train"]["output_dir"])
-
     if accelerator.is_main_process:
         output_dir.mkdir(parents=True, exist_ok=True)
+        OmegaConf.save(config=args, f=output_dir / "config.yaml")
+
+    # Initialize Weights & Biases
+    enable_wandb = args["train"].get("enable_wandb", True)
+    if enable_wandb and accelerator.is_main_process:
         wandb.init(project="detr", name=output_dir.name, config=args)
 
     accelerator.wait_for_everyone()
@@ -98,10 +102,6 @@ def main(args: DictConfig) -> None:
 
     # Create EMA model
     ema_model = AveragedModel(model, multi_avg_fn=instantiate(args["ema"]))
-
-    # Save the arguments to the output directory
-    if accelerator.is_main_process:
-        OmegaConf.save(config=args, f=output_dir / "config.yaml")
 
     # Create optimizer (config/optimizer/*.yaml)
     lr = args["optimizer"]["lr"]
@@ -163,6 +163,9 @@ def main(args: DictConfig) -> None:
         accelerator=accelerator,
         **args["train"],
     )
+
+    if enable_wandb and accelerator.is_main_process:
+        wandb.finish()
 
     accelerator.end_training()
 
