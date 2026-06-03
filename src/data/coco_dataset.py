@@ -195,7 +195,14 @@ class CocoDataset(Dataset):
         annotation_id = 1
 
         for root_index, root in enumerate(roots):
-            with open(root / self.annotation_name) as f:
+            if not root.exists():
+                raise FileNotFoundError(f"Root not found: {root}")
+
+            annotation_file = root / self.annotation_name
+            if not annotation_file.exists():
+                raise FileNotFoundError(f"Annotations not found: {annotation_file}")
+
+            with open(annotation_file) as f:
                 root_dataset = json.load(f)
 
             # Ensure categories are consistent across datasets
