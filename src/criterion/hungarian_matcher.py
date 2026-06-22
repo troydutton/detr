@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Dict, List, Tuple
 
 import numpy as np
@@ -73,6 +74,10 @@ class HungarianMatcher:
             total_cost = sum(self.cost_weights.get(k, 1) * v for k, v in costs.items())
 
             # Handle NaN and infinite values
+            if not torch.isfinite(total_cost).all():
+                bad_costs = [f"`{name}`" for name, cost in costs.items() if not torch.isfinite(cost).all()]
+                logging.warning(f"NaN or infinite values detected in costs: {', '.join(bad_costs)} for image {targets[i]['image_name']}. ")
+
             total_cost.nan_to_num_(nan=1e6, posinf=1e6, neginf=-1e6)
             total_cost.clamp_(-1e6, 1e6)
 

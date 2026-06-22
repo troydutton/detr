@@ -98,8 +98,10 @@ class CocoDataset(Dataset):
                 - `area`: Area of each bounding box.
                 - `iscrowd`: Crowd indicators.
                 - `image_id`: Image identifier.
+                - `image_name`: Image file name.
                 - `orig_size`: Original image size (height, width).
                 - `size`: Transformed image size (height, width).
+                - `epoch`: Current epoch number.
         """
 
         # Retrieve annotations and image information
@@ -116,6 +118,7 @@ class CocoDataset(Dataset):
         target = self._convert_object_annotations(annotations, height=h, width=w)
 
         # Add image & dataset information
+        target["image_name"] = image_info["file_name"]
         target["image_id"] = torch.tensor([image_id], dtype=torch.int64)
         target["orig_size"] = torch.tensor([h, w], dtype=torch.int64)
         target["epoch"] = self.epoch
