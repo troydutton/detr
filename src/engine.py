@@ -174,15 +174,15 @@ def train_one_epoch(
     # Set the model to training mode
     model.train()
 
+    unwrapped_model: DETR = accelerator.unwrap_model(model)
+    named_parameters = list(unwrapped_model.named_parameters())
+
     data = tqdm(data, desc=f"Training (Epoch {epoch + 1})", dynamic_ncols=True, disable=not accelerator.is_main_process, smoothing=0)
     for images, targets in data:
         with accelerator.accumulate(model):
             # Apply batch-level random resizing if enabled
             if batch_resize is not None:
                 images, targets = batch_resize(images, targets)
-
-            # Zero the gradients
-            optimizer.zero_grad(set_to_none=True)
 
             # Forward pass
             predictions = model(images, targets)
@@ -193,22 +193,40 @@ def train_one_epoch(
             # Backward pass
             accelerator.backward(losses["overall"])
 
-            # Clip gradients and calculate the average losses across processes for logging
+            # Clip gradients, check for NaN/Inf values, and skip the update if necessary
+            should_update = True
             if accelerator.sync_gradients:
-                accelerator.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
-                losses = {k: torch.mean(accelerator.reduce(v.detach(), reduction="mean")).item() for k, v in losses.items()}
+                # Determine if each parameter's gradient is finite
+                named_gradients = [(name, param.grad) for name, param in named_parameters if param.grad is not None]
+                is_finite = torch.stack([torch.isfinite(grad).all() for _, grad in named_gradients])
 
-            # Update the parameters and learning rate
-            optimizer.step()
-            scheduler.step()
+                # If any gradients are NaN or Inf, skip the optimizer step and log a warning
+                if is_finite.all():
+                    accelerator.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
+                else:
+                    should_update = False
+
+                    bad_params = [name for (name, _), finite in zip(named_gradients, is_finite.tolist()) if not finite]
+                    logging.warning(f"Skipping optimizer step due to NaN/Inf gradients in: {', '.join(bad_params)}")
+
+            # Update the parameters and learning rate if the gradients are valid
+            if should_update:
+                optimizer.step()
+                scheduler.step()
+
+            # Zero the gradients
+            optimizer.zero_grad(set_to_none=True)
 
             # Update the EMA model
-            if accelerator.sync_gradients:
+            if accelerator.sync_gradients and should_update:
                 ema_model.update_parameters(model)
 
             # Log the loss
-            if accelerator.is_main_process and accelerator.sync_gradients and enable_wandb:
-                wandb.log({"train": {"loss": losses}})
+            if accelerator.sync_gradients and should_update and enable_wandb:
+                losses = {k: torch.mean(accelerator.reduce(v.detach(), reduction="mean")).item() for k, v in losses.items()}
+
+                if accelerator.is_main_process:
+                    wandb.log({"train": {"loss": losses}})
 
     accelerator.wait_for_everyone()
 
