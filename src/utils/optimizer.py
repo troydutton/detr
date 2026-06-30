@@ -38,9 +38,12 @@ def build_parameter_groups(
     """
     Build parameter groups for the optimizer with a separate learning rate for the backbone.
 
-    The backbone embedding layers are kept at the default learning rate to allow them to adapt
-    to new image & patch sizes. Even though the projector is inside the backbone, it is not
-    pretrained and is also kept at the default learning rate.
+    The backbone uses layer-wise learning rate decay to preserve the pretrained features
+    in the earlier layers while allowing the later layers to adapt to the new task. The
+    projector lives inside the backbone but is not pretrained, so it is excluded from
+    the decay and kept at the default learning rate.
+
+    We also exclude biases, normalization parameters, and embeddings from weight decay.
 
     Args:
         model: Model with parameters.
@@ -60,7 +63,7 @@ def build_parameter_groups(
     num_default, num_backbone = 0, 0
 
     for name, param in model.named_parameters():
-        if param.requires_grad == False:
+        if not param.requires_grad:
             continue
 
         # Determine learning rate
