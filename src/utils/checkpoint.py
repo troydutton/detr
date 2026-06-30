@@ -48,9 +48,9 @@ def save_checkpoint(
 
     if ema_model is not None and accelerator.is_main_process:
         ema_path = Path(checkpoint_path) / "ema_model.safetensors"
-        logging.info(f"EMA model weights saved in {ema_path}")
         state_dict = {k: v.cpu().contiguous() for k, v in ema_model.state_dict().items()}
         save_file(state_dict, ema_path, metadata=metadata)
+        logging.info(f"EMA model weights saved in {ema_path}")
 
 
 def load_checkpoint(
@@ -80,10 +80,6 @@ def load_checkpoint(
 def load_state_dict(pretrained_weights: Union[str, Path]) -> Dict[str, Tensor]:
     """
     Load model weights from a pretrained weights file.
-
-    Args:
-        pretrained_weights: Path to a pretrained weights file or an accelerate checkpoint directory.
-
 
     Args:
         pretrained_weights: Path to a pretrained weights file or an accelerate checkpoint directory.
