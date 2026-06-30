@@ -66,7 +66,7 @@ class TransformerDecoder(Module):
         num_classes: int,
         num_layers: int,
         num_queries: int,
-        num_inference_queries: int = None,
+        num_inference_queries: Optional[int] = None,
         num_groups: int = 1,
         pos_noise_scale: float = 0.4,
         neg_noise_scale: float = 0.8,
@@ -135,7 +135,7 @@ class TransformerDecoder(Module):
     def forward(
         self,
         features: Features,
-        targets: List[Target] = None,
+        targets: Optional[List[Target]] = None,
     ) -> Tuple[Predictions, Optional[Predictions], Optional[Predictions]]:
         """
         Forward pass for the transformer decoder.
@@ -184,7 +184,7 @@ class TransformerDecoder(Module):
 
             # Initialize the reference boxes in the first layer
             if i == 0:
-                offsets = self.bbox_head(self.norm(queries.embed))
+                offsets = self.bbox_head(query_embed)
                 layer_boxes = add_box_offsets(queries.reference, offsets)
                 layer_edge_logits = torch.zeros(batch_size, total_queries, 4 * (self.num_bins + 1), device=layer_boxes.device)
 

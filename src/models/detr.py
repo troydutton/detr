@@ -28,7 +28,12 @@ class DETR(nn.Module):
             See `models.backbone.Backbone`, `models.encoder.TransformerEncoder`, and `models.decoder.TransformerDecoder`.
     """
 
-    def __init__(self, pretrained_weights: str = None, categories: List[str] = None, **kwargs) -> None:
+    def __init__(
+        self,
+        pretrained_weights: Optional[str] = None,
+        categories: Optional[List[str]] = None,
+        **kwargs,
+    ) -> None:
         super().__init__()
 
         # Build the backbone

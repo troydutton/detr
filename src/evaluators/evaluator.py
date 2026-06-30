@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+from accelerate import Accelerator
 
 
 class Evaluator(ABC):
@@ -13,13 +15,14 @@ class Evaluator(ABC):
         pass
 
     @abstractmethod
-    def update(self, predictions: Dict[str, Any], targets: List[Any]) -> None:
+    def update(self, predictions: Any, targets: List[Any], accelerator: Optional[Accelerator] = None) -> None:
         """
         Update the evaluator with a batch of predictions and targets.
 
         Args:
             predictions: Model predictions.
             targets: Ground truth targets.
+            accelerator: Distributed accelerator, optional.
         """
         pass
 

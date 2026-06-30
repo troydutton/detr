@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Any, Dict, Tuple, Union
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 from PIL import Image
@@ -9,8 +9,6 @@ from torch.utils.data import Dataset
 from torchvision.transforms.v2.functional import to_dtype, to_image
 
 from .transforms import Transformation
-
-Args = Dict[str, Union[Any, "Args"]]
 
 
 class ImageDataset(Dataset):
@@ -23,12 +21,12 @@ class ImageDataset(Dataset):
     ├── image1.jpg
     ├── ...
 
-    Args
+    Args:
         root: Root directory containing the images.
         transforms: Transformations to apply to each image, optional.
     """
 
-    def __init__(self, root: str, transforms: Transformation = None) -> None:
+    def __init__(self, root: str, transforms: Optional[Transformation] = None) -> None:
         self.image_paths = sorted([p for p in Path(root).rglob("*") if p.suffix.lower() in [".jpg", ".jpeg", ".png"]])
         self.transforms = transforms
 

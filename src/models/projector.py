@@ -1,4 +1,4 @@
-from typing import List, Type
+from typing import List, Optional, Type
 
 import torch
 import torch.nn as nn
@@ -27,8 +27,8 @@ class Projector(nn.Module):
         self,
         embed_dim: int,
         in_channels: List[int],
-        in_strides: List[int] = None,
-        out_strides: List[int] = None,
+        in_strides: Optional[List[int]] = None,
+        out_strides: Optional[List[int]] = None,
         num_blocks: int = 3,
         activation: Type[nn.Module] = nn.SiLU,
         *,

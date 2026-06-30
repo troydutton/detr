@@ -1,7 +1,7 @@
 import logging
 from collections.abc import Iterable
 from math import sqrt
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import torch
 import transformers
@@ -360,7 +360,7 @@ class Dinov2WithRegistersDropPath(nn.Module):
         drop_prob: The probability of dropping paths, optional.
     """
 
-    def __init__(self, drop_prob: float | None = None) -> None:
+    def __init__(self, drop_prob: Optional[float] = None) -> None:
         super().__init__()
 
         self.drop_prob = drop_prob if drop_prob is not None else 0.0
@@ -554,7 +554,7 @@ class Dinov2WithRegistersPreTrainedModel(nn.Module):
             nn.init.trunc_normal_(module.position_embeddings, mean=0.0, std=self.config.initializer_range)
             nn.init.trunc_normal_(module.cls_token, mean=0.0, std=self.config.initializer_range)
             nn.init.zeros_(module.register_tokens)
-        elif isinstance(module, Dinov2WithRegistersLayerScale):  # noqa: F821
+        elif isinstance(module, Dinov2WithRegistersLayerScale):
             nn.init.constant_(module.lambda1, self.config.layerscale_value)
 
 
@@ -639,8 +639,8 @@ class Dinov2WithRegistersModel(Dinov2WithRegistersPreTrainedModel):
         name: str,
         image_size: int | Tuple[int, int],
         patch_size: int | Tuple[int, int],
-        out_feature_indices: List[int] | None = None,
-        window_layer_indices: List[int] | None = None,
+        out_feature_indices: Optional[List[int]] = None,
+        window_layer_indices: Optional[List[int]] = None,
         num_windows: int = 1,
         *,
         pretrained: bool = True,

@@ -1,7 +1,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import PIL.Image
 import torch
@@ -46,7 +46,7 @@ class CocoDataset(Dataset):
     def __init__(
         self,
         roots: str | List[str],
-        transforms: Transformation = None,
+        transforms: Optional[Transformation] = None,
         image_directory: str = "images",
         annotation_name: str = "_annotations.coco.json",
     ) -> None:
@@ -54,7 +54,7 @@ class CocoDataset(Dataset):
         if isinstance(roots, (str, Path)):
             roots = [roots]
 
-        self.roots = [Path(roots) for roots in roots]
+        self.roots = [Path(root) for root in roots]
         self.transforms = transforms
         self.image_directory = image_directory
         self.annotation_name = annotation_name
