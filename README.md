@@ -42,21 +42,21 @@ ruff check --fix src/ tests/
 The instructions for training, evaluating, exporting, and benchmarking models are provided below.
 
 ## Training
-To train a model, update `config/train.yaml` and run `train.py`.
+To train a model, update `configs/train.yaml` and run `train.py`.
 
 ```bash
 accelerate launch src/train.py <additional-args>
 ```
 
 ## Evaluation
-To evaluate a model, update `config/evaluate.yaml` and run `evaluate.py`.
+To evaluate a model, update `configs/evaluate.yaml` and run `evaluate.py`.
 
 ```bash
 accelerate launch src/evaluate.py <additional-args>
 ```
 
 ## Exporting
-To export a model, update `config/export.yaml` and run `export.py`.
+To export a model, update `configs/export.yaml` and run `export.py`.
 
 ```bash
 accelerate launch src/export.py <additional-args>
