@@ -65,8 +65,8 @@ class Criterion:
 
         Args:
             predictions: Decoder, encoder, and denoising predictions, with keys
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
-                - `class_logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_groups, num_queries, 4).
+                - `class_logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
                 - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
             targets: List of targets for each image, with keys
                 - `labels`: Target class labels of shape (num_targets,).
@@ -164,8 +164,8 @@ class Criterion:
 
         Args:
             predictions: Model predictions, with keys
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
-                - `class_logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_groups, num_queries, 4).
+                - `class_logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
                 - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
             targets: List of targets for each image, with keys
                 - `labels`: Target class labels of shape (num_targets,).
@@ -219,8 +219,8 @@ class Criterion:
 
         Args:
             predictions: Model predictions, with keys
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
-                - `class_logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_groups, num_queries, 4).
+                - `class_logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
                 - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
             targets: List of targets for each image, with keys
                 - `labels`: Target class labels of shape (num_targets,).
@@ -275,8 +275,8 @@ class Criterion:
 
         Args:
             predictions: Model predictions, with keys
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
-                - `class_logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_groups, num_queries, 4).
+                - `class_logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
                 - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
             targets: List of targets for each image, with keys
                 - `labels`: Target class labels of shape (num_targets,).
@@ -335,8 +335,8 @@ class Criterion:
 
         Args:
             denoise_predictions: Denoise predictions, with keys:
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_queries, 4).
-                - `class_logits`: Class logits of shape (batch_size, num_layers, num_queries, num_classes).
+                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_groups, num_queries, 4).
+                - `class_logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
                 - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
             targets: List of targets for each image, with keys
                 - `labels`: Target class labels of shape (num_targets,).
