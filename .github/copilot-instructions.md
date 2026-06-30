@@ -10,7 +10,7 @@ The primary modules are:
  - `data/`: Data loading (`coco_dataset.py`, `image_dataset.py`) and transformation utilities (`transforms.py`).
  - `criterion/`: Loss functions (`criterion.py`) and matching algorithms (`hungarian_matcher.py`).
  - `evaluators/`: Evaluation metrics (`coco_evaluator.py`).
- - `utils/`: Utility functions for bounding box manipulation (`boxes.py`), checkpointing (`checkpoint.py`), fine-grained localization (`distribution.py`), learning rate schedulers (`lr.py`), parameter group initialization (`optimizer.py`), object visualization (`visualize.py`), prediction post-processing (`postprocess.py`), and miscellaneous helpers (`misc.py`).
+ - `utils/`: Utility functions for bounding box manipulation (`boxes.py`), checkpointing (`checkpoint.py`), fine-grained localization (`edges.py`), learning rate schedulers (`lr.py`), parameter group initialization (`optimizer.py`), object visualization (`visualize.py`), prediction post-processing (`postprocess.py`), and miscellaneous helpers (`misc.py`).
 
 Configuration files (`configs/`) use the Hydra format, and unit tests (`tests/`) use the pytest framework.
 
