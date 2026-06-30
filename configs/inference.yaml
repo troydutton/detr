@@ -13,5 +13,4 @@ confidence_threshold: 0.5
 iou_threshold: 0.5
 make_video: True
 fps: 30
-batch_size: 8
 num_workers: 4
