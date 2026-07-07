@@ -102,35 +102,32 @@ def box_intersection(boxes1: Tensor, boxes2: Tensor, box_format: str = "xyxy") -
     width_height = (bottom_right - top_left).clamp(min=0)  # (N,M,2)
     intersection_area = width_height[:, :, 0] * width_height[:, :, 1]  # (N,M)
 
-    return intersection_area + EPSILON
+    return intersection_area
 
 
-def clamp_boxes(
-    boxes: Tensor,
-    min: float = EPSILON,
-    max: float = 1.0 - EPSILON,
-    box_format: str = "cxcywh",
-) -> Tensor:
+def clamp_boxes(boxes: Tensor, box_format: str = "cxcywh") -> Tensor:
     """
-    Clamp boxes to a specified range, ensuring they remain valid and non-degenerate.
+    Clamp boxes to lie within the unit square while remaining valid and non-degenerate.
+
+    We clamp in XYXY: the bottom-right corner is clamped to [EPSILON, 1] and the top-left corner
+    to [EPSILON, bottom_right - EPSILON]. This guarantees the box lies within the image, has a
+    center point within the image, and has a non-zero area.
 
     Args:
-        boxes: Bounding boxes with shape (N, 4).
-        min: Minimum value for clamping, optional.
-        max: Maximum value for clamping, optional.
+        boxes: Bounding boxes with shape (..., 4).
         box_format: Format of the boxes ("xyxy", "cxcywh", ...), optional.
 
     Returns:
-        boxes: Clamped bounding boxes with shape (N, 4).
+        boxes: Clamped bounding boxes with shape (..., 4).
     """
 
-    # We perform clamping in cxcywh to ensure that the center point
-    # lies within the image and the box area is non-zero
-    boxes = box_convert(boxes, box_format, "cxcywh")
-    boxes = boxes.clamp(min=min, max=max)
-    boxes = box_convert(boxes, "cxcywh", box_format)
+    boxes = box_convert(boxes, box_format, "xyxy")
 
-    return boxes
+    bottom_right = boxes[..., 2:].clamp(EPSILON, 1.0)
+    top_left = boxes[..., :2].clamp(min=0).minimum(bottom_right - EPSILON)
+    boxes = torch.cat([top_left, bottom_right], dim=-1)
+
+    return box_convert(boxes, "xyxy", box_format)
 
 
 def add_box_offsets(references: Tensor, offsets: Tensor) -> Tensor:

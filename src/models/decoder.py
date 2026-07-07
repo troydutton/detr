@@ -407,7 +407,7 @@ class TransformerDecoder(Module):
             box_noise[:, 1] += self.pos_noise_scale  # [λ1, λ2)
             box_noise *= torch.randint_like(boxes, 0, 2) * 2 - 1  # (-λ1, λ1) or (-λ2, -λ1] U [λ1, λ2)
             box_noise *= box_scales  # |∆x| < λw/2, |∆y| < λh/2, |∆w| < λw, |∆y| < λh
-            boxes = (boxes + box_noise).clamp(0, 1)
+            boxes = boxes + box_noise
 
             # The model expects boxes in cxcywh format
             boxes = box_convert(boxes, in_fmt="xyxy", out_fmt="cxcywh")
