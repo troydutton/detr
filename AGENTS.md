@@ -23,6 +23,9 @@ Configuration files (`configs/`) use the Hydra format, and unit tests (`tests/`)
 This project uses `pytest` unit tests located in `tests/` to verify functionality.
 - Command: `conda activate detr && pytest tests/`
 
+### Version Control
+**NEVER** stage or commit changes without the user's explicit approval. You may propose commit messages, but wait for the user to explicitly confirm before running `git add` or `git commit`.
+
 ## Code & Style Conventions
 ### Type Hinting
 Type hinting is **strictly enforced** for all arguments and return values.
