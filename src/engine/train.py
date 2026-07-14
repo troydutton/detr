@@ -82,6 +82,8 @@ def train(
         enable_wandb: Whether to log to Weights & Biases, optional.
     """
 
+    cumulative_step, cumulative_images = 0, 0
+
     for epoch in range(start_epoch, num_epochs):
         epoch_start_time = time.perf_counter()
 
@@ -99,7 +101,7 @@ def train(
             data.dataset.epoch = epoch
 
         # Train for a single epoch
-        train_one_epoch(
+        cumulative_step, cumulative_images = train_one_epoch(
             model=model,
             ema_model=ema_model,
             optimizer=optimizer,
@@ -108,6 +110,8 @@ def train(
             data=data,
             epoch=epoch,
             accelerator=accelerator,
+            cumulative_step=cumulative_step,
+            cumulative_images=cumulative_images,
             max_grad_norm=max_grad_norm,
             batch_resize=batch_resize,
             enable_wandb=enable_wandb,
@@ -128,7 +132,7 @@ def train(
         # Log the losses, metrics, and learning rates for this epoch
         if accelerator.is_main_process and enable_wandb:
             learning_rates = {str(group["name"]).removesuffix(".no_decay"): group["lr"] for group in optimizer.param_groups}
-            wandb.log({"val": {"loss": val_losses, "metric": val_metrics}, "lr": learning_rates}, commit=False)
+            wandb.log({"epoch": epoch + 1, "val": {"loss": val_losses, "metric": val_metrics}, "lr": learning_rates})
 
         logging.info(f" Epoch {epoch + 1} | {timedelta(seconds=int(epoch_duration))} ".center(65, "="))
         logging.info(", ".join(f"{k}: {v * 100:.1f}" for k, v in val_metrics["overall"].items()))
