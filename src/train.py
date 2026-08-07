@@ -54,11 +54,11 @@ def main(args: DictConfig) -> None:
         wandb.init(project="detr", name=output_dir.name, config=args)
 
         wandb.define_metric("epoch")
-        wandb.define_metric("train/step")
-        wandb.define_metric("train/images")
-        wandb.define_metric("train/*", step_metric="train/step")
-        wandb.define_metric("val/*", step_metric="epoch")
-        wandb.define_metric("lr/*", step_metric="epoch")
+        wandb.define_metric("train.step")
+        wandb.define_metric("train.images")
+        wandb.define_metric("train.*", step_metric="train.step")
+        wandb.define_metric("val.*", step_metric="epoch")
+        wandb.define_metric("lr.*", step_metric="epoch")
 
     accelerator.wait_for_everyone()
 
