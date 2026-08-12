@@ -8,6 +8,23 @@ from utils.misc import take_annotation_from
 
 
 class MultiHeadDeformableAttention(nn.Module):
+    """
+    Implementation of deformable attention originally introduced in
+    [Deformable DETR: Deformable Transformers for End-to-End Object Detection](https://arxiv.org/abs/2010.04159).
+
+    Each query attends to locations sampled around its reference on every level, rather than
+    to all of the features.
+
+    We deviate from the paper in two way to save computation: there is no value projection,
+    and the output projection is omitted in favor of a target gating mechanism.
+
+    Args:
+        embed_dim: Embedding dimension.
+        num_heads: Number of attention heads.
+        num_levels: Number of feature levels.
+        num_points: Number of sampling points per head, per level.
+    """
+
     def __init__(self, embed_dim: int, num_heads: int, num_levels: int, num_points: int):
         super().__init__()
 
@@ -23,14 +40,6 @@ class MultiHeadDeformableAttention(nn.Module):
         self._initialize_weights()
 
     def forward(self, queries: Tensor, query_reference: Tensor, features: Tensor, dimensions: Tensor) -> Tensor:
-        """
-        Args:
-            queries: Query features with shape (batch_size, num_queries, embed_dim).
-            query_reference: Reference points/boxes for the queries with shape (batch_size, num_queries, 2 or 4).
-            features: Multi-level features with shape (batch_size, num_features, embed_dim).
-            dimensions: Width and height of each feature level with shape (num_levels, 2).
-        """
-
         # We perform all operations in fp32 for numerical stability, and cast back to the input dtype at the end
         batch_size, num_queries, embed_dim = queries.shape
         dtype = queries.dtype
@@ -95,10 +104,6 @@ class MultiHeadDeformableAttention(nn.Module):
 
     @torch.no_grad()
     def _initialize_weights(self) -> None:
-        """
-        Initialize the weights of the deformable attention module.
-        """
-
         # Initialize sampling offsets to form a circular grid around the reference points
         nn.init.zeros_(self.sampling_offsets.weight)
 

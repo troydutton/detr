@@ -120,12 +120,6 @@ def make_normalize_transform(normalize: bool = True) -> Transformation:
 
     Separated because sometimes we want to delay normalization so that we can visualize
     the images after other transformations have been applied (i.e. during inference).
-
-    Args:
-        normalize: Whether to normalize the image, optional.
-
-    Returns:
-        normalize_transform: Normalization transform.
     """
 
     return T.Normalize(IMNET_MEAN, IMNET_STD) if normalize else T.Identity()

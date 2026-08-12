@@ -26,17 +26,6 @@ class Gate(nn.Module):
         self._initialize_weights()
 
     def forward(self, current: Tensor, residual: Tensor) -> Tensor:
-        """
-        Computes the gated combination of the current features and the residual update.
-
-        Args:
-            current: Current features with shape (..., embed_dim).
-            residual: Feature residuals to be blended with shape (..., embed_dim).
-
-        Returns:
-            updated: Updated features with shape (..., embed_dim).
-        """
-
         logits = self.gate(torch.cat([current, residual], dim=-1))
 
         current_weight, residual_weight = torch.sigmoid(logits).chunk(2, dim=-1)
@@ -45,10 +34,6 @@ class Gate(nn.Module):
 
     @torch.no_grad()
     def _initialize_weights(self):
-        """
-        Initialize the weights of the target gating layer.
-        """
-
         # Initialize the gate to produce equal weights
         nn.init.zeros_(self.gate.weight)
         nn.init.zeros_(self.gate.bias)

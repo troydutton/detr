@@ -48,16 +48,6 @@ class FFN(nn.Module):
         self._initialize_weights()
 
     def forward(self, input_tensor: Tensor) -> Tensor:
-        """
-        Forward pass of the multi-layer perceptron.
-
-        Args:
-            input_tensor: Input tensor of shape (batch_size, input_dim).
-
-        Returns:
-            output_tensor: Output tensor of shape (batch_size, output_dim).
-        """
-
         return self.mlp(input_tensor)
 
     @take_annotation_from(forward)
@@ -66,10 +56,6 @@ class FFN(nn.Module):
 
     @torch.no_grad()
     def _initialize_weights(self) -> None:
-        """
-        Initialize the weights of the multi-layer perceptron.
-        """
-
         # Weights in hidden layers get initialized uniformly to preserve variance
         for m in self.modules():
             if isinstance(m, nn.Linear):
@@ -107,16 +93,6 @@ class SwiGLUFFN(nn.Module):
         self._initialize_weights()
 
     def forward(self, embeddings: Tensor) -> Tensor:
-        """
-        Apply the SwiGLU feedforward network to the input embeddings.
-
-        Args:
-            embeddings: Input embeddings with shape (batch_size, seq_length, embed_dim).
-
-        Returns:
-            embeddings: Output embeddings with shape (batch_size, seq_length, embed_dim).
-        """
-
         embeddings = self.input_proj(embeddings)
 
         gate, signal = embeddings.chunk(2, dim=-1)
@@ -131,10 +107,6 @@ class SwiGLUFFN(nn.Module):
 
     @torch.no_grad()
     def _initialize_weights(self) -> None:
-        """
-        Initialize the weights of the multi-layer perceptron.
-        """
-
         # The input projection is initialized to preserve variance
         nn.init.kaiming_uniform_(self.input_proj.weight, a=sqrt(5))
         nn.init.zeros_(self.input_proj.bias)

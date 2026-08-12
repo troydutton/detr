@@ -111,10 +111,6 @@ def _get_backbone_layer_id(name: str, num_layers: int) -> int:
         - Embedding layers: 0
         - Encoder layers: 1 to num_layers
         - Final normalization: num_layers + 1
-
-    Args:
-        name: Parameter name.
-        num_layers: Total number of layers in the backbone.
     """
 
     if ".embeddings." in name:
@@ -132,13 +128,6 @@ def _should_apply_weight_decay(name: str, param: Tensor) -> bool:
     We apply weight decay to all parameters except for those that are
         - 1D (like biases or normalization parameters), or
         - explicitly identified as embeddings (like positional embeddings or query embeddings)
-
-    Args:
-        name: Parameter name.
-        param: Parameter weight.
-
-    Returns:
-        should_apply: Whether to apply weight decay.
     """
 
     return not (param.ndim < 2 or any(k in name for k in EMBEDDING_KEYS))

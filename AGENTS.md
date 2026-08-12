@@ -46,6 +46,10 @@ Google Style docstrings are required for all public modules, functions, classes,
 - Types should only be specified in the function signature, not in the docstring.
 - Docstrings for classes should document the arguments for creation under the class definition, above `__init__`.
 - Functions with multiple return values should use #### for each return value after the first.
+- `Args:`/`Returns:` blocks are only required on public entry points. Private methods prefer a one-line summary, or
+    no docstring at all when the name and signature already say it.
+- Never restate what the signature already gives you (no `idx: Index of the image to retrieve.`).
+- Document a shape or dict layout once, on the type, not at every function that accepts it.
 - Example:
 
   ```python

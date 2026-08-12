@@ -47,18 +47,7 @@ class CocoEvaluator(Evaluator):
         targets: List[Target],
         accelerator: Optional[Accelerator] = None,
     ) -> None:
-        """
-        Update the evaluator with a batch of predictions and targets.
-
-        Args:
-            predictions: Decoder, optionally encoder, and optionally denoise predictions, with keys
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_groups, num_queries, 4).
-                - `class_logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
-            targets: List of targets, where each target contains
-                - `image_id`: Image ID.
-                - `orig_size`: Original image size [height, width].
-            accelerator: Distributed accelerator, optional.
-        """
+        """Update the evaluator with a batch of predictions and targets."""
 
         # Take predictions from the first group in the final layer
         decoder_predictions, _, _ = predictions
@@ -147,16 +136,6 @@ class CocoEvaluator(Evaluator):
         return metrics
 
     def _calculate_class_metrics(self, coco_eval: COCOeval) -> Dict[str, Dict[str, float]]:
-        """
-        Calculate per-class metrics.
-
-        Args:
-            coco_eval: Evaluation object.
-
-        Returns:
-            class_metrics: Mapping from category name to metrics (AP, AP50, AP75, APs, APm, and APl).
-        """
-
         # Calculate per-category metrics
         precision = coco_eval.eval["precision"][..., -1]  # (iou_thresholds, recall_thresholds, category_ids, area_ranges)
 

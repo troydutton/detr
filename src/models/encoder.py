@@ -29,16 +29,6 @@ class TransformerEncoder(nn.Module):
         self.norm = nn.LayerNorm(embed_dim)
 
     def forward(self, features: Features) -> Features:
-        """
-        Forward pass for the transformer encoder.
-
-        Args:
-            features: Multi-level features with shape (batch_size, num_features, embed_dim).
-
-        Returns:
-            features: Multi-level features with shape (batch_size, num_features, embed_dim).
-        """
-
         assert features.embed.ndim == 3, f"Expected features of shape (batch_size, num_features, embed_dim), got {features.embed.shape=}"
 
         for layer in self.layers:

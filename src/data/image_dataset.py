@@ -39,9 +39,6 @@ class ImageDataset(Dataset):
         """
         Retrieve an image and its corresponding metadata.
 
-        Args:
-            idx: Index of the image to retrieve.
-
         Returns:
             image: Image with shape (channels, height, width).
             #### image_info
