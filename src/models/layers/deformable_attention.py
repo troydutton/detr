@@ -10,7 +10,7 @@ from utils.misc import take_annotation_from
 class MultiHeadDeformableAttention(nn.Module):
     """
     Implementation of deformable attention originally introduced in
-    [Deformable DETR: Deformable Transformers for End-to-End Object Detection](https://arxiv.org/abs/2010.04159).
+    [Deformable DETR](https://arxiv.org/abs/2010.04159).
 
     Each query attends to locations sampled around its reference on every level, rather than
     to all of the features.
