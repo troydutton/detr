@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -59,6 +59,7 @@ class Criterion:
         predictions: Tuple[Predictions, Optional[Predictions], Optional[Predictions]],
         targets: List[Target],
         accelerator: Optional[Accelerator] = None,
+        normalizer_targets: Optional[List[Target]] = None,
     ) -> Dict[str, Tensor]:
         """
         Calculates losses for the given predictions and targets.
@@ -72,6 +73,7 @@ class Criterion:
                 - `labels`: Target class labels of shape (num_targets,).
                 - `boxes`: Target bounding boxes of shape (num_targets, 4).
             accelerator: Distributed accelerator, optional.
+            normalizer_targets: Targets used to count the objects the losses are normalized by.
 
         Returns:
             losses: Dictionary of losses, including `box`, `giou`, `class`, and `overall`.
@@ -79,17 +81,11 @@ class Criterion:
 
         decoder_predictions, encoder_predictions, denoise_predictions = predictions
 
+        normalizer_targets = targets if normalizer_targets is None else normalizer_targets
+
         # Traditional object query losses are normalized by the number of objects across
         # all groups, excluding the number of layers to allow each layer to contribute equally.
-        _, _, num_decoder_groups, num_decoder_queries, _ = decoder_predictions.class_logits.shape
-        decoder_objects_per_image = [min(len(t["boxes"]), num_decoder_queries) for t in targets]
-        num_decoder_targets = sum(decoder_objects_per_image) * num_decoder_groups
-
-        if accelerator is not None:
-            num_decoder_targets = torch.tensor(num_decoder_targets, dtype=torch.float, device=accelerator.device)
-            num_decoder_targets = accelerator.reduce(num_decoder_targets, reduction="mean")
-
-        num_decoder_targets = max(num_decoder_targets, 1)
+        num_decoder_targets = self._count_query_targets(decoder_predictions, normalizer_targets, accelerator)
 
         losses = {"box": 0.0, "giou": 0.0, "class": 0.0, "localization": 0.0}
 
@@ -106,15 +102,7 @@ class Criterion:
 
         # Encoder losses
         if encoder_predictions is not None:
-            _, _, num_encoder_groups, num_encoder_queries, _ = encoder_predictions.class_logits.shape
-            encoder_objects_per_image = [min(len(t["boxes"]), num_encoder_queries) for t in targets]
-            num_encoder_targets = sum(encoder_objects_per_image) * num_encoder_groups
-
-            if accelerator is not None:
-                num_encoder_targets = torch.tensor(num_encoder_targets, dtype=torch.float, device=accelerator.device)
-                num_encoder_targets = accelerator.reduce(num_encoder_targets, reduction="mean")
-
-            num_encoder_targets = max(num_encoder_targets, 1)
+            num_encoder_targets = self._count_query_targets(encoder_predictions, normalizer_targets, accelerator)
 
             matched_indices = self.matcher(encoder_predictions, targets)
             encoder_box_loss, encoder_giou_loss = self._calculate_box_losses(encoder_predictions, targets, matched_indices)
@@ -129,14 +117,9 @@ class Criterion:
             # Denoising losses are normalized by the number of positive denoising samples,
             # determined on the fly because we vary the number of denoising query groups
             num_denoise_queries = denoise_predictions.class_logits.shape[3]
-            objects_per_image = [min(len(t["boxes"]), num_denoise_queries // 2) for t in targets]
-            num_denoise_targets = sum(n * (num_denoise_queries // (2 * n)) if n > 0 else 0 for n in objects_per_image)
-
-            if accelerator is not None:
-                num_denoise_targets = torch.tensor(num_denoise_targets, dtype=torch.float, device=accelerator.device)
-                num_denoise_targets = accelerator.reduce(num_denoise_targets, reduction="mean")
-
-            num_denoise_targets = max(num_denoise_targets, 1)
+            objects_per_image = [min(len(t["boxes"]), num_denoise_queries // 2) for t in normalizer_targets]
+            denoise_targets = sum(n * (num_denoise_queries // (2 * n)) if n > 0 else 0 for n in objects_per_image)
+            num_denoise_targets = self._reduce_target_count(denoise_targets, accelerator)
 
             matched_indices = self._get_denoise_match_indices(denoise_predictions, targets)
             denoise_box_loss, denoise_giou_loss = self._calculate_box_losses(denoise_predictions, targets, matched_indices)
@@ -153,30 +136,40 @@ class Criterion:
 
         return losses
 
+    def _count_query_targets(
+        self,
+        predictions: Predictions,
+        targets: List[Target],
+        accelerator: Optional[Accelerator] = None,
+    ) -> Union[int, Tensor]:
+        """
+        Counts the targets that the query group losses for a set of predictions are normalized by.
+
+        Every query group is matched against the targets independently, and an image cannot
+        contribute more targets than there are queries in a group.
+        """
+
+        _, _, num_groups, num_queries, _ = predictions.class_logits.shape
+        objects_per_image = [min(len(target["boxes"]), num_queries) for target in targets]
+
+        return self._reduce_target_count(sum(objects_per_image) * num_groups, accelerator)
+
+    def _reduce_target_count(self, count: int, accelerator: Optional[Accelerator] = None) -> Union[int, Tensor]:
+        """Averages a target count across processes and clamps it to a valid normalizer."""
+
+        if accelerator is not None:
+            count = torch.tensor(count, dtype=torch.float, device=accelerator.device)
+            count = accelerator.reduce(count, reduction="mean")
+
+        return max(count, 1)
+
     def _calculate_box_losses(
         self,
         predictions: Predictions,
         targets: List[Target],
         matched_indices: MatchIndices,
     ) -> Tuple[Tensor, Tensor]:
-        """
-        Calculate L1 and GIoU loss between matched predictions and target boxes.
-
-        Args:
-            predictions: Model predictions, with keys
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_groups, num_queries, 4).
-                - `class_logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
-                - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
-            targets: List of targets for each image, with keys
-                - `labels`: Target class labels of shape (num_targets,).
-                - `boxes`: Target bounding boxes of shape (num_targets, 4).
-            matched_indices: Matched prediction and target indices.
-
-        Returns:
-            box_loss: L1 loss between matched boxes (summed).
-            #### giou_loss
-            GIoU loss between matched boxes (summed).
-        """
+        """Calculate L1 and GIoU loss between matched predictions and target boxes."""
 
         # Select matched predictions and targets
         prediction_indices, target_indices = matched_indices
@@ -215,20 +208,7 @@ class Criterion:
         Matched:   - q * ((1 - p) ** γ) * log(p) - (1 - q) * (p ** γ) * log(1 - p)
         Unmatched: - (p ** γ) * log(1 - p)
 
-        where q = (p^α) * (iou^(1-α))
-
-        Args:
-            predictions: Model predictions, with keys
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_groups, num_queries, 4).
-                - `class_logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
-                - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
-            targets: List of targets for each image, with keys
-                - `labels`: Target class labels of shape (num_targets,).
-                - `boxes`: Target bounding boxes of shape (num_targets, 4).
-            matched_indices: Matched prediction and target indices.
-
-        Returns:
-            class_loss: Classification loss (summed).
+        with q = (p^α) * (iou^(1-α))
         """
 
         # Get classification predictions and targets
@@ -272,19 +252,6 @@ class Criterion:
 
         Defined as the IoU-weighted cross-entropy between the predicted edge offset probabilities
         and the target edge offset distribution, which is calculated based on the reference points and target boxes.
-
-        Args:
-            predictions: Model predictions, with keys
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_groups, num_queries, 4).
-                - `class_logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
-                - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
-            targets: List of targets for each image, with keys
-                - `labels`: Target class labels of shape (num_targets,).
-                - `boxes`: Target bounding boxes of shape (num_targets, 4).
-            matched_indices: Matched prediction and target indices.
-
-        Returns:
-            localization_loss: FGL loss (summed).
         """
 
         if predictions.edge_logits is None:
@@ -330,21 +297,7 @@ class Criterion:
         return localization_loss
 
     def _get_denoise_match_indices(self, denoise_predictions: Predictions, targets: List[Target]) -> MatchIndices:
-        """
-        Calculates matched indices for denoising queries.
-
-        Args:
-            denoise_predictions: Denoise predictions, with keys:
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_groups, num_queries, 4).
-                - `class_logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
-                - `edge_logits`: Edge offset logits of shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)).
-            targets: List of targets for each image, with keys
-                - `labels`: Target class labels of shape (num_targets,).
-                - `boxes`: Target bounding boxes of shape (num_targets, 4).
-
-        Returns:
-            matched_indices: Matched prediction and target indices.
-        """
+        """Calculates matched indices for denoising queries."""
 
         # Get batch information
         _, num_layers, _, num_queries, _ = denoise_predictions.class_logits.shape

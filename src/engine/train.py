@@ -35,6 +35,7 @@ def train(
     val_data: DataLoader,
     batch_resize: DiscreteRandomResize,
     accelerator: Accelerator,
+    micro_batch_size: int,
     output_dir: Union[str, Path],
     num_epochs: int,
     num_finetune_epochs: int = 0,
@@ -71,6 +72,7 @@ def train(
         val_data: Validation data.
         batch_resize: Batch-level random resize transformation.
         accelerator: Accelerator object.
+        micro_batch_size: Number of images to process in each micro batch.
         num_epochs: Number of epochs to train for.
         num_finetune_epochs: Number of epochs to fine-tune for at the end of training, optional.
         num_warmup_epochs: Number of epochs at the start of training to skip heavy augmentations, optional.
@@ -110,6 +112,7 @@ def train(
             data=data,
             epoch=epoch,
             accelerator=accelerator,
+            micro_batch_size=micro_batch_size,
             cumulative_step=cumulative_step,
             cumulative_images=cumulative_images,
             max_grad_norm=max_grad_norm,

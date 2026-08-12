@@ -1,5 +1,6 @@
 import logging
 import time
+from contextlib import nullcontext
 from typing import Optional, Tuple
 
 import torch
@@ -26,6 +27,7 @@ def train_one_epoch(
     data: DataLoader,
     epoch: int,
     accelerator: Accelerator,
+    micro_batch_size: int,
     cumulative_step: int = 0,
     cumulative_images: int = 0,
     batch_resize: Optional[DiscreteRandomResize] = None,
@@ -45,6 +47,7 @@ def train_one_epoch(
         data: Training data.
         epoch: Current epoch.
         accelerator: Accelerator object.
+        micro_batch_size: Number of images to process in each micro batch.
         cumulative_step: Cumulative number of optimizer steps taken, optional.
         cumulative_images: Cumulative number of images seen, optional.
         batch_resize: Batch-level random resize transformation, optional.
@@ -69,88 +72,100 @@ def train_one_epoch(
 
     data = tqdm(data, desc=f"Training (Epoch {epoch + 1})", dynamic_ncols=True, disable=not accelerator.is_main_process, smoothing=0)
     for images, targets in data:
-        with accelerator.accumulate(model):
-            # Apply batch-level random resizing if enabled
-            if batch_resize is not None:
-                images, targets = batch_resize(images, targets)
+        # Apply batch-level random resizing if enabled
+        if batch_resize is not None:
+            images, targets = batch_resize(images, targets)
 
-            # Accumulate throughput statistics over the window
-            images_in_window += len(images)
-            objects_in_window += sum(len(target["boxes"]) for target in targets)
+        # Accumulate throughput statistics over the window
+        images_in_window += len(images)
+        objects_in_window += sum(len(target["boxes"]) for target in targets)
 
-            # Forward pass
-            predictions = model(images, targets)
+        # Accumulate the gradient over micro batches
+        image_micro_batches = images.split(micro_batch_size)
+        target_micro_batches = [targets[i : i + micro_batch_size] for i in range(0, len(targets), micro_batch_size)]
+        micro_batches = list(zip(image_micro_batches, target_micro_batches))
 
-            # Calculate the loss
-            losses = criterion(predictions, targets, accelerator)
+        losses = {}
+        for index, (micro_images, micro_targets) in enumerate(micro_batches, start=1):
+            # Only synchronize the gradients across processes on the final micro batch
+            sync_context = nullcontext() if index == len(micro_batches) else accelerator.no_sync(model)
 
-            # Backward pass
-            accelerator.backward(losses["overall"])
+            with sync_context:
+                # Forward pass
+                predictions = model(micro_images, micro_targets)
 
-            # Clip gradients, check for NaN/Inf values, and skip the update if necessary
-            should_update = True
-            if accelerator.sync_gradients:
-                # Determine if each parameter's gradient is finite
-                named_gradients = [(name, param.grad) for name, param in named_parameters if param.grad is not None]
-                is_finite = torch.stack([torch.isfinite(grad).all() for _, grad in named_gradients])
+                # Calculate the loss
+                micro_losses = criterion(predictions, micro_targets, accelerator, normalizer_targets=targets)
 
-                # If any gradients are NaN or Inf, skip the optimizer step and log a warning
-                if is_finite.all():
-                    grad_norm = accelerator.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm).item()
-                else:
-                    should_update = False
+                # Backward pass
+                accelerator.backward(micro_losses["overall"])
 
-                    bad_params = [name for (name, _), finite in zip(named_gradients, is_finite.tolist()) if not finite]
-                    logging.warning(f"Skipping optimizer step due to NaN/Inf gradients in: {', '.join(bad_params)}")
+            losses = {name: losses.get(name, 0.0) + loss.detach() for name, loss in micro_losses.items()}
 
-            # Update the parameters and learning rate if the gradients are valid
-            if should_update:
-                optimizer.step()
-                scheduler.step()
+        # Clip gradients, check for NaN/Inf values, and skip the update if necessary
+        should_update = True
 
-            # Zero the gradients
-            optimizer.zero_grad(set_to_none=True)
+        # Determine if each parameter's gradient is finite
+        named_gradients = [(name, param.grad) for name, param in named_parameters if param.grad is not None]
+        is_finite = torch.stack([torch.isfinite(grad).all() for _, grad in named_gradients])
 
-            # If this is an intermediate or invalid gradient step, skip logging and EMA
-            if not accelerator.sync_gradients or not should_update:
-                continue
+        # If any gradients are NaN or Inf, skip the optimizer step and log a warning
+        if is_finite.all():
+            grad_norm = accelerator.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm).item()
+        else:
+            should_update = False
 
-            # Update the EMA model
-            ema_model.update_parameters(model)
+            bad_params = [name for (name, _), finite in zip(named_gradients, is_finite.tolist()) if not finite]
+            logging.warning(f"Skipping optimizer step due to NaN/Inf gradients in: {', '.join(bad_params)}")
 
-            # Log the metrics for this step
-            if enable_wandb:
-                # Total throughput across all processes
-                window_duration = time.perf_counter() - window_start_time
-                throughput_counts = torch.tensor([images_in_window, objects_in_window], device=accelerator.device)
-                throughput_counts: Tensor = accelerator.reduce(throughput_counts, reduction="sum")
-                images_in_window, objects_in_window = throughput_counts.tolist()
+        # Update the parameters and learning rate if the gradients are valid
+        if should_update:
+            optimizer.step()
+            scheduler.step()
 
-                # Update the cumulative step and image counters
-                cumulative_step += 1
-                cumulative_images += images_in_window
+        # Zero the gradients
+        optimizer.zero_grad(set_to_none=True)
 
-                # Mean losses across all processes
-                losses = {k: torch.mean(accelerator.reduce(v.detach(), reduction="mean")).item() for k, v in losses.items()}
+        # If this is an invalid gradient step, skip logging and EMA
+        if not should_update:
+            continue
 
-                if accelerator.is_main_process:
-                    wandb.log(
-                        {
-                            "train": {
-                                "step": cumulative_step,
-                                "images": cumulative_images,
-                                "loss": losses,
-                                "grad_norm": grad_norm,
-                                "images_per_second": images_in_window / window_duration,
-                                "steps_per_second": 1 / window_duration,
-                                "objects_per_image": objects_in_window / images_in_window,
-                            },
-                        }
-                    )
+        # Update the EMA model
+        ema_model.update_parameters(model)
 
-            # Reset the throughput counters for the next window
-            images_in_window, objects_in_window = 0, 0
-            window_start_time = time.perf_counter()
+        # Log the metrics for this step
+        if enable_wandb:
+            # Total throughput across all processes
+            window_duration = time.perf_counter() - window_start_time
+            throughput_counts = torch.tensor([images_in_window, objects_in_window], device=accelerator.device)
+            throughput_counts: Tensor = accelerator.reduce(throughput_counts, reduction="sum")
+            images_in_window, objects_in_window = throughput_counts.tolist()
+
+            # Update the cumulative step and image counters
+            cumulative_step += 1
+            cumulative_images += images_in_window
+
+            # Mean losses across all processes
+            losses = {k: torch.mean(accelerator.reduce(v.detach(), reduction="mean")).item() for k, v in losses.items()}
+
+            if accelerator.is_main_process:
+                wandb.log(
+                    {
+                        "train": {
+                            "step": cumulative_step,
+                            "images": cumulative_images,
+                            "loss": losses,
+                            "grad_norm": grad_norm,
+                            "images_per_second": images_in_window / window_duration,
+                            "steps_per_second": 1 / window_duration,
+                            "objects_per_image": objects_in_window / images_in_window,
+                        },
+                    }
+                )
+
+        # Reset the throughput counters for the next window
+        images_in_window, objects_in_window = 0, 0
+        window_start_time = time.perf_counter()
 
     accelerator.wait_for_everyone()
 
