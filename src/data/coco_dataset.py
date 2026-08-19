@@ -18,7 +18,20 @@ from utils.misc import silence_stdout
 from .transforms import Transformation
 
 ImageAnnotations = List[Dict[str, Any]]
+
 Target = Dict[str, Tensor | BoundingBoxes]
+"""
+Image annotations, including
+    - `boxes`: Bounding boxes in CXCYWH format, normalized to [0, 1].
+    - `labels`: Class labels (category ids).
+    - `area`: Area of each bounding box.
+    - `iscrowd`: Crowd indicators.
+    - `image_id`: Image identifier.
+    - `image_name`: Image file name.
+    - `orig_size`: Original image size (height, width).
+    - `size`: Transformed image size (height, width).
+    - `epoch`: Current epoch number.
+"""
 
 # Allow loading large images without hitting decompression bomb errors
 PIL.Image.MAX_IMAGE_PIXELS = None
@@ -83,26 +96,7 @@ class CocoDataset(Dataset):
         return len(self.image_ids)
 
     def __getitem__(self, idx: int) -> Tuple[Image, Target]:
-        """
-        Retrieve an image and its corresponding annotations.
-
-        Args:
-            idx: Index of the image to retrieve.
-
-        Returns:
-            image: Image tensor with shape (channels, height, width).
-            #### target
-            Image annotations, including
-                - `boxes`: Bounding boxes in CXCYWH format, normalized to [0, 1].
-                - `labels`: Class labels (category ids).
-                - `area`: Area of each bounding box.
-                - `iscrowd`: Crowd indicators.
-                - `image_id`: Image identifier.
-                - `image_name`: Image file name.
-                - `orig_size`: Original image size (height, width).
-                - `size`: Transformed image size (height, width).
-                - `epoch`: Current epoch number.
-        """
+        """Retrieve an image and its corresponding annotations."""
 
         # Retrieve annotations and image information
         image_id = self.image_ids[idx]
@@ -142,14 +136,6 @@ class CocoDataset(Dataset):
         Convert COCO annotations to an expected format.
 
         Expects boxes in XYWH and returns boxes in CXCYWH.
-
-        Args:
-            annotations: Object annotations with bbox, category_id, area, iscrowd.
-            height: Image height.
-            width: Image width.
-
-        Returns:
-            annotations: Object annotations with boxes, labels, area, and iscrowd.
         """
 
         # Remove crowd annotations
@@ -182,15 +168,7 @@ class CocoDataset(Dataset):
         return target
 
     def _create_coco_dataset(self, roots: List[Path]) -> COCO:
-        """
-        Create a single COCO dataset from multiple roots.
-
-        Args:
-            roots: List of dataset roots to merge.
-
-        Returns:
-            coco: Combined COCO dataset.
-        """
+        """Create a single COCO dataset from multiple roots."""
 
         dataset = {"images": [], "annotations": [], "categories": []}
 
@@ -260,13 +238,6 @@ class CocoDataset(Dataset):
         return coco
 
     def get_categories(self) -> List[str]:
-        """
-        Retrieve the category names in the dataset.
-
-        Returns:
-            category_names: List of category names.
-        """
-
         category_names = [self.coco.cats[i]["name"] for i in sorted(self.coco.cats.keys())]
 
         return category_names

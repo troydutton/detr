@@ -17,6 +17,17 @@ logger = logging.getLogger("detr")
 
 @dataclass
 class Features:
+    """
+    Multi-level image features.
+
+    Args:
+        embed: Feature embeddings with shape (batch_size, num_features, embed_dim).
+        pos: Positional embeddings with the same shape as `embed`.
+        reference: Reference points in normalized XY with shape (batch_size, num_features, 2).
+        levels: Level each feature came from with shape (num_features,), note there is no batch dimension.
+        dimensions: Width and height of each level with shape (num_levels, 2), note the WH order.
+    """
+
     embed: Tensor
     pos: Tensor
     reference: Tensor
@@ -61,14 +72,6 @@ class Backbone(nn.Module):
         self.level_pos = nn.Embedding(self.num_output_levels, embed_dim) if enable_level_pos else None
 
     def forward(self, images: Tensor) -> Features:
-        """
-        Args:
-            images: Image with shape (batch_size, 3, height, width).
-
-        Returns:
-            features: Multi-level features
-        """
-
         # Extract backbone features
         backbone_features = self.feature_extractor(images)
 

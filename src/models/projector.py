@@ -63,14 +63,6 @@ class Projector(nn.Module):
         self._initialize_weights()
 
     def forward(self, backbone_features: List[Tensor]) -> List[Tensor]:
-        """
-        Args:
-            backbone_features: List of backbone features with shape (batch_size, in_channels, height, width).
-
-        Returns:
-            output_features: List of projected features with shape (batch_size, embed_dim, height, width).
-        """
-
         # Project all features to the desired embedding dimension
         backbone_features = [projection(feature) for projection, feature in zip(self.projections, backbone_features)]
 
@@ -94,17 +86,7 @@ class Projector(nn.Module):
         return output_features
 
     def _build_resampling_layer(self, embed_dim: int, in_stride: int, out_stride: int) -> nn.Module:
-        """
-        Build a resampling layer to scale a feature map from `in_stride` to `out_stride`.
-
-        Args:
-            embed_dim: The dimension of the input and output feature maps.
-            in_stride: The spatial stride of the input feature map.
-            out_stride: The desired spatial stride of the output feature map.
-
-        Returns:
-            resampling_layer: A module that performs the desired resampling.
-        """
+        """Build a resampling layer to scale a feature map from `in_stride` to `out_stride`."""
 
         ratio = in_stride / out_stride
 
@@ -143,7 +125,6 @@ class Projector(nn.Module):
 
     @torch.no_grad()
     def _initialize_weights(self) -> None:
-        """Initialize the projection weights."""
         for projection in self.projections:
             nn.init.xavier_uniform_(projection.weight)
             nn.init.zeros_(projection.bias)
@@ -196,14 +177,6 @@ class C2f(nn.Module):
         self.act2 = activation()
 
     def forward(self, features: Tensor) -> Tensor:
-        """
-        Args:
-            features: Features with shape (batch_size, in_channels, height, width).
-
-        Returns:
-            features: Features with shape (batch_size, out_channels, height, width).
-        """
-
         # Double the channels and split into base and branch
         features = self.conv1(features)
         features = self.norm1(features)
@@ -271,14 +244,6 @@ class Bottleneck(nn.Module):
         self.act2 = activation()
 
     def forward(self, features: Tensor) -> Tensor:
-        """
-        Args:
-            features: Input tensor with shape (batch_size, in_channels, height, width).
-
-        Returns:
-            features: Transformed tensor with shape (batch_size, out_channels, height, width).
-        """
-
         residual = features
 
         features = self.conv1(features)
@@ -315,14 +280,6 @@ class LayerNorm2d(nn.Module):
         self.bias = nn.Parameter(torch.zeros(in_channels))
 
     def forward(self, x: Tensor) -> Tensor:
-        """
-        Args:
-            x: Input tensor with shape (batch_size, channels, height, width).
-
-        Returns:
-            x: Normalized tensor with shape (batch_size, channels, height, width).
-        """
-
         x = x.permute(0, 2, 3, 1)
         x = F.layer_norm(x, self.in_channels, self.weight, self.bias, self.eps)
         x = x.permute(0, 3, 1, 2)

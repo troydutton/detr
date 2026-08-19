@@ -20,6 +20,20 @@ from .layers.positional_embedding import build_pos_embed
 
 @dataclass
 class Queries:
+    """
+    Object, and optionally denoising, queries.
+
+    Args:
+        embed: Query embeddings with shape (batch_size, num_groups * num_queries + num_denoise_queries, embed_dim).
+        pos: Positional embeddings with the same shape as `embed`.
+        reference: Reference boxes in normalized CXCYWH with shape (batch_size, num_queries, 4).
+        num_groups: Number of query groups.
+        num_queries: Number of object queries in each group.
+        num_denoise_queries: Number of denoising queries, optional.
+        denoise_padding_mask: Mask marking padded denoising queries, optional.
+        denoise_attention_mask: Mask preventing attention between denoising groups, optional.
+    """
+
     embed: Tensor
     pos: Tensor
     reference: Tensor
@@ -32,6 +46,15 @@ class Queries:
 
 @dataclass
 class Predictions:
+    """
+    Object predictions from every layer and query group.
+
+    Args:
+        boxes: Predicted boxes with shape (batch_size, num_layers, num_groups, num_queries, 4).
+        class_logits: Class logits with shape (batch_size, num_layers, num_groups, num_queries, num_classes).
+        edge_logits: Edge offset logits with shape (batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)), optional.
+    """
+
     boxes: Tensor
     class_logits: Tensor
     edge_logits: Optional[Tensor] = None
@@ -137,16 +160,7 @@ class TransformerDecoder(Module):
         features: Features,
         targets: Optional[List[Target]] = None,
     ) -> Tuple[Predictions, Optional[Predictions], Optional[Predictions]]:
-        """
-        Forward pass for the transformer decoder.
-
-        Args:
-            features: Multi-level features with shape (batch_size, num_features, embed_dim).
-            targets: List of targets for each image, optional.
-
-        Returns:
-            predictions: Decoder, encoder, and denoising predictions, with normalized CXCYWH `boxes`, `class_logits`, and `edge_logits`.
-        """
+        """Returns the decoder, encoder, and denoising predictions."""
 
         assert features.embed.ndim == 3, f"Expected features of shape (batch_size, num_features, embed_dim), got {features.embed.shape=}"
 
@@ -257,18 +271,6 @@ class TransformerDecoder(Module):
         return decoder_predictions, encoder_predictions, denoise_predictions
 
     def _initialize_object_queries(self, batch_size: int, num_queries: int, num_groups: int) -> Queries:
-        """
-        Initializes the object queries for the transformer decoder.
-
-        Args:
-            batch_size: Batch size to expand the queries to.
-            num_queries: Number of object queries in each group.
-            num_groups: Number of query groups to use.
-
-        Returns:
-            queries: Initial object queries.
-        """
-
         # Learned object query embeddings (1, num_groups * num_queries, embed_dim)
         query_embed = self.queries.weight.view(self.num_groups, self.num_queries, -1)[:num_groups, :num_queries]
         query_embed = query_embed.reshape(num_groups * num_queries, -1).unsqueeze(0)
@@ -290,21 +292,7 @@ class TransformerDecoder(Module):
         return Queries(embed=query_embed, pos=query_pos, reference=query_ref, num_groups=num_groups, num_queries=num_queries)
 
     def _generate_query_proposals(self, features: Features, num_queries: int, num_groups: int) -> Tuple[Queries, Tensor, Tensor]:
-        """
-        Generates initial object queries from the encoder features.
-
-        Args:
-            features: Multi-level features with shape (batch_size, num_features, embed_dim).
-            num_queries: Number of object queries in each group.
-            num_groups: Number of query groups to use.
-
-        Returns:
-            queries: Initial object queries.
-            #### encoder_boxes
-            Normalized CXCYWH encoder proposal box predictions with shape (batch_size, 1, num_groups, num_features, 4).
-            #### encoder_logits
-            Encoder proposal class logits with shape (batch_size, 1, num_groups, num_features, num_classes).
-        """
+        """Selects the top scoring encoder features as object queries."""
 
         # Get batch information
         batch_size, num_features, _ = features.embed.shape
@@ -357,16 +345,7 @@ class TransformerDecoder(Module):
         return queries, encoder_boxes, encoder_logits
 
     def _generate_denoising_queries(self, queries: Queries, targets: List[Target]) -> Queries:
-        """
-        Generates denoising queries for the transformer decoder during training.
-
-        Args:
-            queries: Initial object queries.
-            targets: List of targets for each image.
-
-        Returns:
-            queries: Object and denoising queries.
-        """
+        """Genreates noised copies of the targets as denoising queries."""
 
         # Get batch information
         device = queries.embed.device

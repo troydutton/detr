@@ -48,17 +48,7 @@ class Mosaic:
         self.cache = collections.deque(maxlen=max_cache_size)
 
     def __call__(self, image: Tensor, annotations: Target) -> Tuple[Tensor, Target]:
-        """
-        Applies mosaic augmentation to an image.
-
-        Args:
-            image: Image with shape (3, height, width).
-            annotations: Image information and object annotations.
-
-        Returns:
-            image: Mosaic image with shape (3, height, width).
-            annotations: Image information and mosaic object annotations.
-        """
+        """Applies mosaic augmentation to an image."""
 
         # Store the image and target in the cache for use in future mosaics
         image_clone, annotations_clone = self._clone_sample((image, annotations))
@@ -132,15 +122,8 @@ class Mosaic:
         return canvas, canvas_annotations
 
     def _clone_sample(self, sample: Tuple[Tensor, Target]) -> Tuple[Tensor, Target]:
-        """
-        Creates a deep copy of an image and its annotations.
+        """Creates a deep copy of an image and its annotations."""
 
-        Args:
-            sample: A tuple containing an image and its corresponding annotations.
-
-        Returns:
-            A tuple containing the cloned image and annotations.
-        """
         image, annotations = sample
 
         cloned_image = image.clone()

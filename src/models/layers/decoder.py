@@ -59,17 +59,6 @@ class DecoderLayer(Module):
         self.dropout3 = Dropout(dropout)
 
     def forward(self, queries: Queries, features: Features) -> Queries:
-        """
-        Forward pass for a single transformer decoder layer.
-
-        Args:
-            queries: Object queries with shape (batch_size, num_queries, embed_dim).
-            features: Multi-level features with shape (batch_size, num_features, embed_dim).
-
-        Returns:
-            queries: Object queries with the same shape as the input.
-        """
-
         # Prepare shapes and split queries
         batch_size, _, _ = queries.embed.shape
         num_object_queries = queries.num_groups * queries.num_queries
@@ -177,17 +166,6 @@ class DeformableDecoderLayer(Module):
         self.dropout3 = Dropout(dropout)
 
     def forward(self, queries: Queries, features: Features) -> Queries:
-        """
-        Forward pass for a single transformer decoder layer.
-
-        Args:
-            queries: Object queries with shape (batch_size, num_queries, embed_dim).
-            features: Multi-level features with shape (batch_size, num_features, embed_dim).
-
-        Returns:
-            queries: Object queries with the same shape as the input.
-        """
-
         # Prepare shapes and split queries
         batch_size, _, _ = queries.embed.shape
         num_object_queries = queries.num_groups * queries.num_queries

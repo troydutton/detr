@@ -119,12 +119,7 @@ class DETR(nn.Module):
 
     @torch.no_grad()
     def _initialize_weights(self, pretrained_weights: Union[str, Path] = None) -> None:
-        """
-        Initialize model weights, optionally loading from a pretrained checkpoint.
-
-        Args:
-            pretrained_weights: Path to a pretrained weights file or an accelerate checkpoint directory containing a `model.safetensors` file.
-        """
+        """Initialize model weights, optionally loading from a weights file or an accelerate checkpoint directory."""
 
         # Check for BatchNorm layers
         for module_name, module in self.backbone.named_modules():

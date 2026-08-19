@@ -41,16 +41,6 @@ class EncoderLayer(nn.Module):
         self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, features: Features) -> Features:
-        """
-        Forward pass for a single transformer encoder layer.
-
-        Args:
-            features: Multi-level features with shape (batch_size, num_features, embed_dim).
-
-        Returns:
-            features: Multi-level features with shape (batch_size, num_features, embed_dim).
-        """
-
         # Self-attention
         v = self.norm1(features.embed)
         q = k = v + features.pos
@@ -103,16 +93,6 @@ class DeformableEncoderLayer(nn.Module):
         self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, features: Features) -> Features:
-        """
-        Forward pass for a single transformer encoder layer.
-
-        Args:
-            features: Multi-level features with shape (batch_size, num_features, embed_dim).
-
-        Returns:
-            features: Multi-level features with shape (batch_size, num_features, embed_dim).
-        """
-
         # Self-attention
         v = self.norm1(features.embed)
         q = v + features.pos

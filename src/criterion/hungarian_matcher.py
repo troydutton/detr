@@ -37,14 +37,6 @@ class HungarianMatcher:
         """
         Perform Hungarian matching between predictions and targets.
 
-        Args:
-            predictions: Model predictions, with keys:
-                - `boxes`: Predicted bounding boxes of shape (batch_size, num_layers, num_groups, num_queries, 4).
-                - `class_logits`: Class logits of shape (batch_size, num_layers, num_groups, num_queries, num_classes).
-            targets: List of targets for each image, with keys:
-                - `labels`: Target class labels of shape (num_targets,).
-                - `boxes`: Target bounding boxes of shape (num_targets, 4).
-
         Returns:
             matched_indices: Matched prediction and target indices for each image and layer in the batch.
         """
@@ -114,18 +106,7 @@ class HungarianMatcher:
         return (batch_indices, layer_indices, group_indices, query_indices), target_indices
 
     def _calculate_box_costs(self, prediction_boxes: Tensor, target_boxes: Tensor) -> Tuple[Tensor, Tensor]:
-        """
-        Calculate L1 and GIoU costs between prediction and target boxes.
-
-        Args:
-            prediction_boxes: Predicted bounding boxes of shape (num_predictions, 4).
-            target_boxes: Target bounding boxes of shape (num_targets, 4).
-
-        Returns:
-           box_cost: L1 distance between prediction and target boxes.
-           #### giou_cost
-           Generalized IoU cost between prediction and target boxes.
-        """
+        """Calculate L1 and GIoU costs between prediction and target boxes."""
 
         # Minimize L1 Distance
         box_cost = torch.cdist(prediction_boxes, target_boxes, p=1)
@@ -139,16 +120,7 @@ class HungarianMatcher:
         return box_cost, giou_cost
 
     def _calculate_class_cost(self, prediction_logits: Tensor, target_labels: Tensor) -> Tensor:
-        """
-        Calculate classification cost between predicted logits and target labels.
-
-        Args:
-            prediction_logits: Predicted class logits of shape (num_predictions, num_classes).
-            target_labels: Target class labels of shape (num_targets,).
-
-        Returns:
-            class_cost: Classification cost between predicted logits and target labels.
-        """
+        """Calculate classification cost between predicted logits and target labels."""
 
         # We use binary focal loss for classification
         prediction_logits = prediction_logits[..., target_labels]
