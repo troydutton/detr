@@ -14,7 +14,7 @@ The primary modules are:
 
 Configuration files (`configs/`) use the Hydra format, and unit tests (`tests/`) use the pytest framework.
 
-## Key Workflows & Commands
+## Development
 ### Environment Management
 **ALWAYS** activate the conda environment before running any programs, tests, or python commands.
 - Command: `conda activate detr`
@@ -24,7 +24,18 @@ This project uses `pytest` unit tests located in `tests/` to verify functionalit
 - Command: `conda activate detr && pytest tests/`
 
 ### Version Control
-**NEVER** stage or commit changes without the user's explicit approval. You may propose commit messages, but wait for the user to explicitly confirm before running `git add` or `git commit`.
+**NEVER** stage or commit changes without the user's explicit approval. You may propose commit messages, but wait for the user to explicitly confirm before running `git add`, `git commit`, or `git push`.
+
+### Pull Requests & Issues
+Write both to be **concise**.
+
+Pull requests have two sections:
+- `Description`: 1-2 paragraphs on the motivation and a high level overview of what the PR accomplishes (what and why). Avoid referencing exact code elements. Include results or A/B comparisons when applicable.
+- `Changes`: One sentence bullets covering the most important code changes, referencing exact code elements where it helps. Deliberately not exhaustive.
+
+Issues have two sections:
+- `Summary`: 1-2 paragraphs describing the issue, experiment, or bug with the relevant context.
+- `Plan`: High level overview of how it could be implemented, as checkboxes or steps. Omit it for loosely scoped issues.
 
 ## Code & Style Conventions
 ### Type Hinting
