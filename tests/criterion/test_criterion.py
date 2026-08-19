@@ -278,3 +278,68 @@ class TestCriterion:
         assert decoder_preds.edge_logits.grad is not None
         assert torch.count_nonzero(decoder_preds.boxes.grad) == 0
         assert torch.count_nonzero(decoder_preds.edge_logits.grad) == 0
+
+    def test_criterion_invariant_to_micro_batch_split(self) -> None:
+        """
+        Losses summed over micro batches normalized by the whole batch should match the unsplit losses.
+        """
+
+        batch_size = 4
+        num_layers = 2
+        num_groups = 2
+        num_queries = 10
+        num_denoise_queries = 20
+        num_classes = 4
+        num_bins = 4
+
+        def make_predictions(queries: int, groups: int) -> Predictions:
+            return Predictions(
+                boxes=torch.rand((batch_size, num_layers, groups, queries, 4)),
+                class_logits=torch.randn((batch_size, num_layers, groups, queries, num_classes)),
+                edge_logits=torch.randn((batch_size, num_layers, groups, queries, 4 * (num_bins + 1))),
+            )
+
+        def slice_predictions(predictions: Predictions, start: int, stop: int) -> Predictions:
+            return Predictions(
+                boxes=predictions.boxes[start:stop],
+                class_logits=predictions.class_logits[start:stop],
+                edge_logits=predictions.edge_logits[start:stop],
+            )
+
+        decoder_preds = make_predictions(num_queries, num_groups)
+        encoder_preds = make_predictions(num_queries, num_groups)
+        denoise_preds = make_predictions(num_denoise_queries, 1)
+
+        # Uneven object counts, including an empty image, so the normalizers differ per micro batch
+        targets: List[Dict[str, Tensor]] = []
+        for num_objects in [2, 0, 3, 1]:
+            targets.append(
+                {
+                    "labels": torch.randint(0, num_classes, (num_objects,)),
+                    "boxes": torch.cat([torch.rand((num_objects, 2)) * 0.5 + 0.25, torch.rand((num_objects, 2)) * 0.2 + 0.05], dim=-1),
+                }
+            )
+
+        criterion = Criterion(loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0, "localization": 0.5}, num_bins=num_bins)
+
+        expected = criterion((decoder_preds, encoder_preds, denoise_preds), targets)
+
+        for micro_batch_size in [1, 2, 4]:
+            accumulated: Dict[str, Tensor] = {}
+            for start in range(0, batch_size, micro_batch_size):
+                stop = start + micro_batch_size
+                micro_losses = criterion(
+                    (
+                        slice_predictions(decoder_preds, start, stop),
+                        slice_predictions(encoder_preds, start, stop),
+                        slice_predictions(denoise_preds, start, stop),
+                    ),
+                    targets[start:stop],
+                    normalizer_targets=targets,
+                )
+                accumulated = {name: accumulated.get(name, 0.0) + loss for name, loss in micro_losses.items()}
+
+            for name, loss in expected.items():
+                assert torch.allclose(
+                    accumulated[name], loss, atol=1e-4
+                ), f"Loss {name} differs at micro_batch_size={micro_batch_size}: {accumulated[name].item()} vs {loss.item()}"

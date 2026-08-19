@@ -1,6 +1,5 @@
 import copy
 import logging
-from math import ceil
 from pathlib import Path
 from typing import Any, Dict, Union
 
@@ -34,7 +33,7 @@ def main(args: DictConfig) -> None:
     args: Args = OmegaConf.to_container(args, resolve=True, throw_on_missing=True)
 
     # Distributed setup
-    accelerator = Accelerator(gradient_accumulation_steps=args["train"]["grad_accum_steps"])
+    accelerator = Accelerator()
 
     if not accelerator.is_main_process:
         logging.getLogger().setLevel(logging.ERROR)
@@ -73,10 +72,11 @@ def main(args: DictConfig) -> None:
 
     # Create dataloaders
     batch_size, num_workers = args["train"]["batch_size"], args["train"]["num_workers"]
+    grad_accum_steps = args["train"]["grad_accum_steps"]
 
     train_data = DataLoader(
         train_dataset,
-        batch_size=batch_size,
+        batch_size=batch_size * grad_accum_steps,
         shuffle=True,
         num_workers=num_workers,
         collate_fn=collate_fn,
@@ -86,7 +86,7 @@ def main(args: DictConfig) -> None:
 
     finetune_data = DataLoader(
         finetune_dataset,
-        batch_size=batch_size,
+        batch_size=batch_size * grad_accum_steps,
         shuffle=True,
         num_workers=num_workers,
         collate_fn=collate_fn,
@@ -128,8 +128,7 @@ def main(args: DictConfig) -> None:
     optimizer: Optimizer = instantiate(args["optimizer"], _convert_="all")
 
     # Create learning rate scheduler (config/scheduler/*.yaml)
-    steps_per_epoch = ceil(len(train_data) / accelerator.gradient_accumulation_steps)
-    args["scheduler"] = prepare_scheduler_arguments(args["scheduler"], steps_per_epoch=steps_per_epoch)
+    args["scheduler"] = prepare_scheduler_arguments(args["scheduler"], steps_per_epoch=len(train_data))
     scheduler: _LRScheduler = instantiate(args["scheduler"], optimizer=optimizer)
 
     # Distribute training components
@@ -168,6 +167,7 @@ def main(args: DictConfig) -> None:
         val_data=val_data,
         batch_resize=batch_resize,
         accelerator=accelerator,
+        micro_batch_size=batch_size,
         **args["train"],
     )
 
