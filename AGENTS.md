@@ -29,8 +29,10 @@ This project uses `pytest` unit tests located in `tests/` to verify functionalit
 ### Pull Requests & Issues
 Write both to be **concise**.
 
+**ALWAYS** re-read a pull request or issue before editing it. The description may have been rewritten since you last saw it. Preserve existing changes when modifying unless explicitly instructed otherwise.
+
 Pull requests have two sections:
-- `Description`: 1-2 paragraphs on the motivation and a high level overview of what the PR accomplishes (what and why). Avoid referencing exact code elements. Include results or A/B comparisons when applicable.
+- `Description`: One paragraph on the motivation and a high level overview of what the PR accomplishes (what and why). Avoid referencing exact code elements. Include results or A/B comparisons when applicable.
 - `Changes`: One sentence bullets covering the most important code changes, referencing exact code elements where it helps. Deliberately not exhaustive.
 
 Issues have two sections:
