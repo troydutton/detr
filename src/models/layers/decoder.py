@@ -3,12 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
-from torch import Tensor, nn
+from torch import Tensor
 from torch.nn import Dropout, LayerNorm, Module
 
 from models.backbone import Features
 from utils.misc import take_annotation_from
 
+from .attention import MultiheadAttention
 from .deformable_attention import MultiHeadDeformableAttention
 from .ffn import SwiGLUFFN
 from .gate import Gate
@@ -41,16 +42,14 @@ class DecoderLayer(Module):
     ) -> None:
         super().__init__()
 
-        self.num_heads = num_heads
-
         # Self-attention
         self.norm1 = LayerNorm(embed_dim)
-        self.self_attention = nn.MultiheadAttention(embed_dim, num_heads, dropout, batch_first=True)
+        self.self_attention = MultiheadAttention(embed_dim, num_heads, dropout)
         self.dropout1 = Dropout(dropout)
 
         # Cross-attention
         self.norm2 = LayerNorm(embed_dim)
-        self.cross_attention = nn.MultiheadAttention(embed_dim, num_heads, dropout, batch_first=True)
+        self.cross_attention = MultiheadAttention(embed_dim, num_heads, dropout)
         self.dropout2 = Dropout(dropout)
 
         # Feedforward Network
@@ -78,7 +77,7 @@ class DecoderLayer(Module):
 
         v = self.norm1(obj_embed)
         q = k = v + obj_pos
-        obj_embed: Tensor = obj_embed + self.dropout1(self.self_attention(q, k, v, need_weights=False)[0])
+        obj_embed: Tensor = obj_embed + self.dropout1(self.self_attention(q, k, v))
 
         queries.embed = obj_embed.reshape(batch_size, num_object_queries, -1)
 
@@ -88,17 +87,7 @@ class DecoderLayer(Module):
             v = self.norm1(denoise_embed)
             q = k = v + denoise_pos
 
-            attn_mask = queries.denoise_attention_mask.repeat_interleave(self.num_heads, dim=0)
-
-            denoise_embed = denoise_embed + self.dropout1(
-                self.self_attention(
-                    query=q,
-                    key=k,
-                    value=v,
-                    attn_mask=attn_mask,
-                    need_weights=False,
-                )[0]
-            )
+            denoise_embed = denoise_embed + self.dropout1(self.self_attention(q, k, v, queries.denoise_attention_mask))
 
             queries.embed = torch.cat([queries.embed, denoise_embed], dim=1)
 
@@ -106,7 +95,7 @@ class DecoderLayer(Module):
         q = self.norm2(queries.embed) + queries.pos
         k = features.embed + features.pos
         v = features.embed
-        queries.embed = queries.embed + self.dropout2(self.cross_attention(q, k, v, need_weights=False)[0])
+        queries.embed = queries.embed + self.dropout2(self.cross_attention(q, k, v))
 
         # Feedforward Network
         queries.embed = queries.embed + self.dropout3(self.ffn(self.norm3(queries.embed)))
@@ -147,11 +136,9 @@ class DeformableDecoderLayer(Module):
     ) -> None:
         super().__init__()
 
-        self.num_heads = num_heads
-
         # Self-attention
         self.norm1 = LayerNorm(embed_dim)
-        self.self_attention = nn.MultiheadAttention(embed_dim, num_heads, dropout, batch_first=True)
+        self.self_attention = MultiheadAttention(embed_dim, num_heads, dropout)
         self.dropout1 = Dropout(dropout)
 
         # Deformable cross-attention
@@ -185,7 +172,7 @@ class DeformableDecoderLayer(Module):
 
         v = self.norm1(obj_embed)
         q = k = v + obj_pos
-        obj_embed: Tensor = obj_embed + self.dropout1(self.self_attention(q, k, v, need_weights=False)[0])
+        obj_embed: Tensor = obj_embed + self.dropout1(self.self_attention(q, k, v))
 
         queries.embed = obj_embed.reshape(batch_size, num_object_queries, -1)
 
@@ -195,17 +182,7 @@ class DeformableDecoderLayer(Module):
             v = self.norm1(denoise_embed)
             q = k = v + denoise_pos
 
-            attn_mask = queries.denoise_attention_mask.repeat_interleave(self.num_heads, dim=0)
-
-            denoise_embed = denoise_embed + self.dropout1(
-                self.self_attention(
-                    query=q,
-                    key=k,
-                    value=v,
-                    attn_mask=attn_mask,
-                    need_weights=False,
-                )[0]
-            )
+            denoise_embed = denoise_embed + self.dropout1(self.self_attention(q, k, v, queries.denoise_attention_mask))
 
             queries.embed = torch.cat([queries.embed, denoise_embed], dim=1)
 

@@ -29,9 +29,9 @@ class Queries:
         reference: Reference boxes in normalized CXCYWH with shape (batch_size, num_queries, 4).
         num_groups: Number of query groups.
         num_queries: Number of object queries in each group.
-        num_denoise_queries: Number of denoising queries, optional.
-        denoise_padding_mask: Mask marking padded denoising queries, optional.
-        denoise_attention_mask: Mask preventing attention between denoising groups, optional.
+        num_denoise_queries: Number of denoising queries.
+        denoise_padding_mask: Mask marking padded denoising queries.
+        denoise_attention_mask: Mask allowing attention within a denoising group.
     """
 
     embed: Tensor
@@ -127,7 +127,8 @@ class TransformerDecoder(Module):
         # Predicts the edge offset probabiltiies
         self.edge_head = FFN(embed_dim, embed_dim, 4 * (num_bins + 1), 3)
         self.edge_class_head = FFN(embed_dim + (4 * (num_bins + 1)), embed_dim, num_classes, 3)
-        self.edge_offset_weights = make_edge_offset_weights(num_bins, edge_offset_magnitude, edge_offset_curvature)
+        edge_offset_weights = make_edge_offset_weights(num_bins, edge_offset_magnitude, edge_offset_curvature)
+        self.register_buffer("edge_offset_weights", edge_offset_weights, persistent=False)
 
         # Predicts the class logits
         self.class_head = Linear(embed_dim, num_classes)
@@ -357,7 +358,7 @@ class TransformerDecoder(Module):
         query_pos = torch.zeros(batch_size, self.num_denoise_queries, self.embed_dim, device=device)
         query_ref = torch.zeros(batch_size, self.num_denoise_queries, 4, device=device)
         padding_mask = torch.ones(batch_size, self.num_denoise_queries, dtype=torch.bool, device=device)
-        attention_mask = torch.zeros(batch_size, self.num_denoise_queries, self.num_denoise_queries, dtype=torch.bool, device=device)
+        attention_mask = torch.ones(batch_size, 1, self.num_denoise_queries, self.num_denoise_queries, dtype=torch.bool, device=device)
 
         for i, (target, num_objects) in enumerate(zip(targets, objects_per_image)):
             boxes, labels = target["boxes"][:num_objects], target["labels"][:num_objects]
@@ -403,11 +404,11 @@ class TransformerDecoder(Module):
 
             # Prevent queries from attending to padding
             padding_mask[i, :num_queries] = False
-            attention_mask[i, :num_queries, num_queries:] = True
+            attention_mask[i, 0, :num_queries, num_queries:] = False
 
             # Only allow queries within the same group to attend to each other
             denoise_group_indices = torch.arange(num_queries, device=device) // (2 * num_objects)
-            attention_mask[i, :num_queries, :num_queries] = denoise_group_indices[:, None] != denoise_group_indices[None, :]
+            attention_mask[i, 0, :num_queries, :num_queries] = denoise_group_indices[:, None] == denoise_group_indices[None, :]
 
         # Add a learnable task embedding to distinguish between object and denoising queries.
         # Keep label embeddings in the graph when this rank has only padded denoising queries.
