@@ -343,3 +343,102 @@ class TestCriterion:
                 assert torch.allclose(
                     accumulated[name], loss, atol=1e-4
                 ), f"Loss {name} differs at micro_batch_size={micro_batch_size}: {accumulated[name].item()} vs {loss.item()}"
+
+
+class TestMatcherReduction:
+    """
+    Tests that restricting the assignment to candidate queries stays optimal.
+    """
+
+    @staticmethod
+    def _cost_matrices(matcher: HungarianMatcher, predictions: Predictions, targets: List[Dict[str, Tensor]]) -> List[Tensor]:
+        """Rebuilds the per-image cost matrices the matcher solves, with shape (num_layers, num_groups, num_queries, num_targets)."""
+
+        _, num_layers, num_groups, num_queries, _ = predictions.class_logits.shape
+
+        matrices = []
+        for i in range(len(targets)):
+            prediction_boxes = predictions.boxes[i].flatten(0, 2)
+            prediction_logits = predictions.class_logits[i].flatten(0, 2)
+
+            box_cost, giou_cost = matcher._calculate_box_costs(prediction_boxes, targets[i]["boxes"])
+            class_cost = matcher._calculate_class_cost(prediction_logits, targets[i]["labels"])
+
+            costs = {"class": class_cost, "box": box_cost, "giou": giou_cost}
+            total_cost = sum(matcher.cost_weights.get(k, 1) * v for k, v in costs.items())
+
+            matrices.append(total_cost.view(num_layers, num_groups, num_queries, -1))
+
+        return matrices
+
+    def _check(self, num_queries: int, objects_per_image: List[int], *, tied: bool = False) -> None:
+        from scipy.optimize import linear_sum_assignment
+
+        num_layers, num_groups, num_classes = 3, 2, 6
+        batch_size = len(objects_per_image)
+
+        boxes = torch.rand((batch_size, num_layers, num_groups, num_queries, 4)) * 0.5 + 0.25
+        class_logits = torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes))
+
+        if tied:
+            # Collapse the predictions onto a handful of distinct values to force ties
+            boxes = (boxes * 4).round() / 4
+            class_logits = class_logits.round()
+
+        predictions = Predictions(boxes=boxes, class_logits=class_logits)
+        targets: List[Dict[str, Tensor]] = [
+            {
+                "labels": torch.randint(0, num_classes, (num_objects,)),
+                "boxes": torch.cat([torch.rand((num_objects, 2)) * 0.5 + 0.25, torch.rand((num_objects, 2)) * 0.2 + 0.05], dim=-1),
+                "image_name": f"image_{i}",
+            }
+            for i, num_objects in enumerate(objects_per_image)
+        ]
+
+        matcher = HungarianMatcher(cost_weights={"class": 2.0, "box": 5.0, "giou": 2.0})
+        (batch_indices, layer_indices, group_indices, query_indices), target_indices = matcher(predictions, targets)
+
+        matrices = self._cost_matrices(matcher, predictions, targets)
+
+        for i, num_objects in enumerate(objects_per_image):
+            if num_objects == 0:
+                continue
+
+            keep = batch_indices == i
+            layers, groups, queries = layer_indices[keep], group_indices[keep], query_indices[keep]
+
+            # Every query may only be matched once within a layer and group
+            assigned = torch.stack([layers, groups, queries], dim=-1)
+            assert len(torch.unique(assigned, dim=0)) == len(assigned), f"Query matched more than once for image {i}"
+
+            # The matched cost has to equal the optimum over the full cost matrix
+            matched = matrices[i][layers.long(), groups.long(), queries.long(), target_indices[i]].sum()
+
+            optimal = 0.0
+            for layer in range(num_layers):
+                for group in range(num_groups):
+                    cost_matrix = matrices[i][layer, group].numpy()
+                    optimal += cost_matrix[linear_sum_assignment(cost_matrix)].sum()
+
+            assert abs(matched.item() - optimal) < 1e-3, f"Suboptimal assignment for image {i}: {matched.item()} vs {optimal}"
+
+    def test_reduction_is_optimal(self) -> None:
+        """
+        Candidate reduction is active and has to reproduce the optimum.
+        """
+        torch.manual_seed(0)
+        self._check(num_queries=64, objects_per_image=[1, 4, 7, 0])
+
+    def test_reduction_is_optimal_with_ties(self) -> None:
+        """
+        Ties make several assignments optimal, but the cost still has to match.
+        """
+        torch.manual_seed(1)
+        self._check(num_queries=64, objects_per_image=[4, 6, 7], tied=True)
+
+    def test_falls_back_to_every_query(self) -> None:
+        """
+        The reduction is skipped when the candidates would outnumber the queries.
+        """
+        torch.manual_seed(2)
+        self._check(num_queries=25, objects_per_image=[6, 9, 12])
