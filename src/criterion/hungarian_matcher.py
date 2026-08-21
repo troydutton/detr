@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Dict, List, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -73,8 +73,17 @@ class HungarianMatcher:
             total_cost.nan_to_num_(nan=1e6, posinf=1e6, neginf=-1e6)
             total_cost.clamp_(-1e6, 1e6)
 
-            # Move to CPU once and reshape to (num_layers, num_groups, num_queries, num_targets)
-            total_cost = total_cost.cpu().view(num_layers, num_groups, num_queries, -1)
+            # Reshape to (num_layers, num_groups, num_queries, num_targets)
+            total_cost = total_cost.view(num_layers, num_groups, num_queries, -1)
+
+            # Restrict each assignment to the candidate queries
+            candidate_indices = self._select_candidate_queries(total_cost)
+            if candidate_indices is not None:
+                row_indices = candidate_indices[..., None].expand(-1, -1, -1, total_cost.shape[-1])
+                total_cost = total_cost.gather(2, row_indices)
+                candidate_indices = candidate_indices.cpu().numpy()
+
+            total_cost = total_cost.cpu().numpy()
 
             image_target_indices = []
             for l in range(num_layers):
@@ -85,8 +94,11 @@ class HungarianMatcher:
                     # Solve the linear sum assignment problem
                     indices = linear_sum_assignment(cost_matrix)
 
-                    query_indices.append(indices[0])
                     image_target_indices.append(indices[1])
+                    if candidate_indices is None:
+                        query_indices.append(indices[0])
+                    else:
+                        query_indices.append(candidate_indices[l, g][indices[0]])
 
                     group_indices.append(torch.full((matches_per_image[i],), g))
                 layer_indices.append(torch.full((matches_per_image[i] * num_groups,), l))
@@ -104,6 +116,30 @@ class HungarianMatcher:
         query_indices = query_indices.to(device)
 
         return (batch_indices, layer_indices, group_indices, query_indices), target_indices
+
+    def _select_candidate_queries(self, total_cost: Tensor) -> Optional[Tensor]:
+        """
+        Selects distinct queries an optimal assignment can draw from, or None to use every query.
+
+        An optimal assignment always exists that only uses each target's `num_targets` cheapest
+        queries: if a target were matched to a query outside of them, the remaining targets occupy
+        at most `num_targets - 1` queries, leaving one of the cheapest free to swap onto.
+        """
+
+        _, _, num_queries, num_targets = total_cost.shape
+
+        # Only worth it if there are fewer candidates than queries
+        if not 0 < num_targets**2 < num_queries:
+            return None
+
+        # Cheapest num_targets queries for each target
+        candidate_indices = total_cost.topk(num_targets, dim=2, largest=False).indices.flatten(2)
+
+        # Distinct candidates to avoid duplicate assignments
+        candidate_mask = torch.zeros(total_cost.shape[:3], dtype=torch.uint8, device=total_cost.device)
+        candidate_mask.scatter_(2, candidate_indices, 1)
+
+        return candidate_mask.topk(num_targets**2, dim=2).indices
 
     def _calculate_box_costs(self, prediction_boxes: Tensor, target_boxes: Tensor) -> Tuple[Tensor, Tensor]:
         """Calculate L1 and GIoU costs between prediction and target boxes."""

@@ -1,3 +1,8 @@
+import os
+
+# Reduce fragmentation that occurs due to multi-scale resizing.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import copy
 import logging
 from pathlib import Path
