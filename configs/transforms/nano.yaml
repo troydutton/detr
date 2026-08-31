@@ -1,7 +1,7 @@
 train:
   _target_: data.transforms.make_transformations
   split: train
-  resolution: [192, 256, 320, 384, 448, 512, 576]
+  resolution: [256, 320, 384, 448, 512, 576]
 
 finetune:
   _target_: data.transforms.make_transformations
