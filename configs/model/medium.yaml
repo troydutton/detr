@@ -1,7 +1,7 @@
 pretrained_weights: Null
 
 embed_dim: 256
-ffn_dim: 2048
+ffn_dim: 1024
 num_heads: 8
 num_deformable_heads: 16
 num_points: 2
@@ -47,7 +47,7 @@ decoder:
   denoise_queries: True
   num_groups: ${model.num_groups}
   num_queries: ${model.num_queries}
-  num_denoise_queries: ${model.num_denoise_queries} 
+  num_denoise_queries: ${model.num_denoise_queries}
   num_inference_queries: ${model.num_inference_queries}
   embed_dim: ${model.embed_dim}
   pos_noise_scale: ${model.pos_noise_scale}

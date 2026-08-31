@@ -1,14 +1,14 @@
 pretrained_weights: Null
 
 embed_dim: 256
-ffn_dim: 1024 
+ffn_dim: 1024
 num_heads: 8
 num_deformable_heads: 16
 num_points: 2
 dropout: 0.1
 num_groups: 13
 num_queries: 200
-num_denoise_queries: 1000
+num_denoise_queries: 300
 num_inference_queries: 100
 pos_noise_scale: 0.4
 neg_noise_scale: 0.8
@@ -47,7 +47,7 @@ decoder:
   denoise_queries: True
   num_groups: ${model.num_groups}
   num_queries: ${model.num_queries}
-  num_denoise_queries: ${model.num_denoise_queries} 
+  num_denoise_queries: ${model.num_denoise_queries}
   num_inference_queries: ${model.num_inference_queries}
   embed_dim: ${model.embed_dim}
   pos_noise_scale: ${model.pos_noise_scale}
