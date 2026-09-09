@@ -1,7 +1,7 @@
 import logging
 import time
 from contextlib import nullcontext
-from typing import Optional, Tuple
+from typing import Tuple
 
 import torch
 import wandb
@@ -28,9 +28,9 @@ def train_one_epoch(
     epoch: int,
     accelerator: Accelerator,
     micro_batch_size: int,
+    batch_resize: DiscreteRandomResize,
     cumulative_step: int = 0,
     cumulative_images: int = 0,
-    batch_resize: Optional[DiscreteRandomResize] = None,
     max_grad_norm: float = 0.1,
     *,
     enable_wandb: bool = True,
@@ -48,9 +48,9 @@ def train_one_epoch(
         epoch: Current epoch.
         accelerator: Accelerator object.
         micro_batch_size: Number of images to process in each micro batch.
+        batch_resize: Batch-level random resize transformation.
         cumulative_step: Cumulative number of optimizer steps taken, optional.
         cumulative_images: Cumulative number of images seen, optional.
-        batch_resize: Batch-level random resize transformation, optional.
         max_grad_norm: Maximum gradient norm for clipping, optional.
         enable_wandb: Whether to log to Weights & Biases, optional.
 
@@ -72,9 +72,7 @@ def train_one_epoch(
 
     data = tqdm(data, desc=f"Training (Epoch {epoch + 1})", dynamic_ncols=True, disable=not accelerator.is_main_process, smoothing=0)
     for images, targets in data:
-        # Apply batch-level random resizing if enabled
-        if batch_resize is not None:
-            images, targets = batch_resize(images, targets)
+        images, targets = batch_resize(images, targets)
 
         # Accumulate throughput statistics over the window
         images_in_window += len(images)

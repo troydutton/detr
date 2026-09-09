@@ -89,15 +89,14 @@ def train(
     for epoch in range(start_epoch, num_epochs):
         epoch_start_time = time.perf_counter()
 
-        if epoch == num_warmup_epochs:
-            logging.info("Enabling heavy augmentations.")
-        elif epoch == num_epochs - num_cooldown_epochs:
+        if epoch == num_epochs - num_cooldown_epochs:
             logging.info("Disabling heavy augmentations.")
+        elif epoch == num_warmup_epochs:
+            logging.info("Enabling heavy augmentations.")
         if epoch == num_epochs - num_finetune_epochs:
-            logging.info("Disabling all augmentations and multi-scale resizing.")
+            logging.info("Disabling all augmentations.")
 
         data = train_data if epoch < num_epochs - num_finetune_epochs else finetune_data
-        batch_resize = batch_resize if epoch < num_epochs - num_finetune_epochs else None
 
         if isinstance(data.dataset, CocoDataset):
             data.dataset.epoch = epoch
