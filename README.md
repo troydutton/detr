@@ -66,5 +66,5 @@ accelerate launch src/export.py <additional-args>
 To benchmark a model, first export the model as described above, then use `trtexec` to run inference.
 
 ```bash
-trtexec --onnx=<path-to-onnx> --memPoolSize=workspace:4096 --fp16 --useCudaGraph --useSpinWait --warmUp=500 --avgRuns=1000 --duration=10
+trtexec --onnx=<path-to-onnx> --memPoolSize=workspace:4096 --warmUp=500 --avgRuns=1000 --duration=10
 ```

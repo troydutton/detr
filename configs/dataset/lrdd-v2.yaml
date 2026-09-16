@@ -1,0 +1,9 @@
+train:
+  _target_: data.CocoDataset
+  roots: /path/to/lrdd-v2/train
+  transforms: ${transforms.train}
+
+val:
+  _target_: data.CocoDataset
+  roots: /path/to/lrdd-v2/val
+  transforms: ${transforms.val}

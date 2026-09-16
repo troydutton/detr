@@ -11,6 +11,7 @@ import torch
 from accelerate import Accelerator
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
+from onnxconverter_common import float16
 from torch.utils.data import DataLoader
 
 from data import CocoDataset, collate_fn
@@ -123,6 +124,14 @@ def main(args: DictConfig) -> None:
             "iou_threshold": str(best_iou),
         }
         onnx.helper.set_model_props(onnx_model, metadata)
+
+        # Convert to half precision
+        onnx_model = float16.convert_float_to_float16(
+            onnx_model,
+            keep_io_types=True,
+            op_block_list=[*float16.DEFAULT_OP_BLOCK_LIST, "GridSample"],
+        )
+
         onnx.save(onnx_model, output_path)
 
         logging.info(f"Exported model to '{output_path}'.")

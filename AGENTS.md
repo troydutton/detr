@@ -23,6 +23,11 @@ Configuration files (`configs/`) use the Hydra format, and unit tests (`tests/`)
 This project uses `pytest` unit tests located in `tests/` to verify functionality.
 - Command: `conda activate detr && pytest tests/`
 
+### Launching Runs
+The W&B run name is taken from the final component of `train.output_dir`.
+- Debugging, smoke tests, and other temporary runs must not log to W&B: pass `train.enable_wandb=False`.
+- Real runs and experiments are named `dataset-size-notes`, e.g. `lrdd-small-no-edge-offsets`, `coco-small`, or `o365-large-higher-resolution`.
+
 ### Version Control
 **NEVER** stage or commit changes without the user's explicit approval. You may propose commit messages, but wait for the user to explicitly confirm before running `git add`, `git commit`, or `git push`.
 

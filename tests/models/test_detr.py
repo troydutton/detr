@@ -23,7 +23,6 @@ def test_detr_forward() -> None:
     num_decoder_layers = 2
     num_queries = 5
     num_groups = 1
-    num_bins = 4
 
     kwargs = {
         "embed_dim": embed_dim,
@@ -57,7 +56,6 @@ def test_detr_forward() -> None:
             "num_queries": num_queries,
             "num_classes": num_classes,
             "num_groups": num_groups,
-            "num_bins": num_bins,
             "layer": {
                 "_target_": "models.layers.decoder.DecoderLayer",
                 "embed_dim": embed_dim,
@@ -81,14 +79,11 @@ def test_detr_forward() -> None:
     assert output.class_logits is not None
 
     # Check output shapes
-    expected_class_logits_shape = (batch_size, num_decoder_layers + 1, num_groups, num_queries, num_classes)
+    expected_class_logits_shape = (batch_size, num_decoder_layers, num_groups, num_queries, num_classes)
     assert output.class_logits.shape == expected_class_logits_shape, f"{expected_class_logits_shape=}, {output.class_logits.shape=}"
 
-    expected_boxes_shape = (batch_size, num_decoder_layers + 1, num_groups, num_queries, 4)
+    expected_boxes_shape = (batch_size, num_decoder_layers, num_groups, num_queries, 4)
     assert output.boxes.shape == expected_boxes_shape, f"Expected boxes shape {expected_boxes_shape}, got {output.boxes.shape}"
-
-    expected_edge_logits_shape = (batch_size, num_decoder_layers + 1, num_groups, num_queries, 4 * (num_bins + 1))
-    assert output.edge_logits.shape == expected_edge_logits_shape, f"{expected_edge_logits_shape=}, {output.edge_logits.shape=}"
 
     # Check that box coordinates are in [0, 1]
     assert output.boxes.min() >= 0.0
@@ -101,7 +96,6 @@ def test_empty_training_batch_keeps_decoder_parameters_used() -> None:
     """
 
     embed_dim = 16
-    num_bins = 4
 
     decoder = TransformerDecoder(
         embed_dim=embed_dim,
@@ -110,7 +104,6 @@ def test_empty_training_batch_keeps_decoder_parameters_used() -> None:
         num_queries=5,
         num_groups=1,
         num_denoise_queries=10,
-        num_bins=num_bins,
         two_stage=True,
         denoise_queries=True,
         layer={
@@ -132,7 +125,7 @@ def test_empty_training_batch_keeps_decoder_parameters_used() -> None:
     )
     targets = [{"labels": torch.empty(0, dtype=torch.int64), "boxes": torch.empty((0, 4), dtype=torch.float32)}]
 
-    criterion = Criterion(loss_weights={"box": 5.0, "giou": 2.0, "class": 1.0, "localization": 0.15}, num_bins=num_bins)
+    criterion = Criterion(loss_weights={"box": 5.0, "giou": 2.0, "class": 1.0})
     decoder_predictions, encoder_predictions, denoise_predictions = decoder(features, targets)
 
     assert decoder_predictions is not None

@@ -123,12 +123,10 @@ class TestCriterion:
         num_groups = 1
         num_queries = 5
         num_classes = 4
-        num_bins = 4
 
         decoder_preds = Predictions(
             boxes=torch.rand((batch_size, num_layers, num_groups, num_queries, 4)),
             class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
-            edge_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1))),
         )
         encoder_preds = Predictions(
             boxes=torch.rand((batch_size, num_layers, num_groups, num_queries, 4)),
@@ -137,7 +135,6 @@ class TestCriterion:
         denoise_preds = Predictions(
             boxes=torch.rand((batch_size, num_layers, 1, num_queries, 4)),
             class_logits=torch.randn((batch_size, num_layers, 1, num_queries, num_classes)),
-            edge_logits=torch.randn((batch_size, num_layers, 1, num_queries, 4 * (num_bins + 1))),
         )
 
         targets: List[Dict[str, Tensor]] = [
@@ -151,14 +148,13 @@ class TestCriterion:
             },
         ]
 
-        criterion = Criterion(loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0}, num_bins=num_bins)
+        criterion = Criterion(loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0})
 
         losses = criterion((decoder_preds, encoder_preds, denoise_preds), targets)
 
         assert "box" in losses
         assert "class" in losses
         assert "giou" in losses
-        assert "localization" in losses
         assert "overall" in losses
 
         for key, value in losses.items():
@@ -173,12 +169,10 @@ class TestCriterion:
         num_groups = 1
         num_queries = 5
         num_classes = 4
-        num_bins = 4
 
         decoder_preds = Predictions(
             boxes=torch.rand((batch_size, num_layers, num_groups, num_queries, 4)),
             class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
-            edge_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1))),
         )
 
         targets: List[Dict[str, Tensor]] = [
@@ -188,16 +182,13 @@ class TestCriterion:
             }
         ]
 
-        criterion = Criterion(
-            loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0}, cost_weights={"class": 2.0, "box": 5.0, "giou": 2.0}, num_bins=num_bins
-        )
+        criterion = Criterion(loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0}, cost_weights={"class": 2.0, "box": 5.0, "giou": 2.0})
 
         losses = criterion((decoder_preds, None, None), targets)
 
         assert "box" in losses
         assert "class" in losses
         assert "giou" in losses
-        assert "localization" in losses
         assert "overall" in losses
 
         for key, value in losses.items():
@@ -212,12 +203,10 @@ class TestCriterion:
         num_groups = 1
         num_queries = 5
         num_classes = 4
-        num_bins = 4
 
         decoder_preds = Predictions(
             boxes=torch.rand((batch_size, num_layers, num_groups, num_queries, 4)),
             class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes)),
-            edge_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1))),
         )
 
         targets: List[Dict[str, Tensor]] = [
@@ -227,14 +216,13 @@ class TestCriterion:
             }
         ]
 
-        criterion = Criterion(loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0}, num_bins=num_bins)
+        criterion = Criterion(loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0})
 
         losses = criterion((decoder_preds, None, None), targets)
 
         assert "box" in losses
         assert "class" in losses
         assert "giou" in losses
-        assert "localization" in losses
         assert "overall" in losses
 
         for key, value in losses.items():
@@ -250,12 +238,10 @@ class TestCriterion:
         num_groups = 1
         num_queries = 5
         num_classes = 4
-        num_bins = 4
 
         decoder_preds = Predictions(
             boxes=torch.rand((batch_size, num_layers, num_groups, num_queries, 4), requires_grad=True),
             class_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, num_classes), requires_grad=True),
-            edge_logits=torch.randn((batch_size, num_layers, num_groups, num_queries, 4 * (num_bins + 1)), requires_grad=True),
         )
 
         targets: List[Dict[str, Tensor]] = [
@@ -265,19 +251,16 @@ class TestCriterion:
             }
         ]
 
-        criterion = Criterion(loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0}, num_bins=num_bins)
+        criterion = Criterion(loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0})
         losses = criterion((decoder_preds, None, None), targets)
 
         assert losses["box"].requires_grad
         assert losses["giou"].requires_grad
-        assert losses["localization"].requires_grad
 
         losses["overall"].backward()
 
         assert decoder_preds.boxes.grad is not None
-        assert decoder_preds.edge_logits.grad is not None
         assert torch.count_nonzero(decoder_preds.boxes.grad) == 0
-        assert torch.count_nonzero(decoder_preds.edge_logits.grad) == 0
 
     def test_criterion_invariant_to_micro_batch_split(self) -> None:
         """
@@ -290,20 +273,17 @@ class TestCriterion:
         num_queries = 10
         num_denoise_queries = 20
         num_classes = 4
-        num_bins = 4
 
         def make_predictions(queries: int, groups: int) -> Predictions:
             return Predictions(
                 boxes=torch.rand((batch_size, num_layers, groups, queries, 4)),
                 class_logits=torch.randn((batch_size, num_layers, groups, queries, num_classes)),
-                edge_logits=torch.randn((batch_size, num_layers, groups, queries, 4 * (num_bins + 1))),
             )
 
         def slice_predictions(predictions: Predictions, start: int, stop: int) -> Predictions:
             return Predictions(
                 boxes=predictions.boxes[start:stop],
                 class_logits=predictions.class_logits[start:stop],
-                edge_logits=predictions.edge_logits[start:stop],
             )
 
         decoder_preds = make_predictions(num_queries, num_groups)
@@ -320,7 +300,7 @@ class TestCriterion:
                 }
             )
 
-        criterion = Criterion(loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0, "localization": 0.5}, num_bins=num_bins)
+        criterion = Criterion(loss_weights={"class": 1.0, "box": 5.0, "giou": 2.0})
 
         expected = criterion((decoder_preds, encoder_preds, denoise_preds), targets)
 

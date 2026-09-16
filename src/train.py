@@ -67,9 +67,9 @@ def main(args: DictConfig) -> None:
     accelerator.wait_for_everyone()
 
     # Create datasets (config/dataset/*.yaml)
-    args["transforms"]["train"]["num_epochs"] = args["train"]["num_epochs"]
-    args["transforms"]["train"]["num_warmup_epochs"] = args["train"]["num_warmup_epochs"]
-    args["transforms"]["train"]["num_cooldown_epochs"] = args["train"]["num_cooldown_epochs"]
+    args["dataset"]["train"]["transforms"]["num_epochs"] = args["train"]["num_epochs"]
+    args["dataset"]["train"]["transforms"]["num_warmup_epochs"] = args["train"]["num_warmup_epochs"]
+    args["dataset"]["train"]["transforms"]["num_cooldown_epochs"] = args["train"]["num_cooldown_epochs"]
     train_dataset: CocoDataset = instantiate(args["dataset"]["train"])
     finetune_dataset = copy.copy(train_dataset)
     finetune_dataset.transforms = instantiate(args["transforms"]["finetune"])
