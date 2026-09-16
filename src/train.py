@@ -149,8 +149,10 @@ def main(args: DictConfig) -> None:
     checkpoint = args["train"].pop("checkpoint", None)
 
     if checkpoint is not None:
-        args["train"]["start_epoch"] = int(Path(checkpoint).name)
-        load_checkpoint(accelerator, checkpoint, ema_model=ema_model)
+        training_state = load_checkpoint(accelerator, checkpoint, ema_model=ema_model)
+        args["train"]["start_epoch"] = training_state["epoch"]
+        args["train"]["start_step"] = training_state["step"]
+        args["train"]["start_images"] = training_state["images"]
 
     ema_model = ema_model.to(accelerator.device)
 

@@ -42,6 +42,8 @@ def train(
     num_warmup_epochs: int = 0,
     num_cooldown_epochs: int = 0,
     start_epoch: int = 0,
+    start_step: int = 0,
+    start_images: int = 0,
     save_period: int = 1,
     max_grad_norm: float = 0.1,
     *,
@@ -77,14 +79,16 @@ def train(
         num_finetune_epochs: Number of epochs to fine-tune for at the end of training, optional.
         num_warmup_epochs: Number of epochs at the start of training to skip heavy augmentations, optional.
         num_cooldown_epochs: Number of epochs at the end of training to skip heavy augmentations, optional.
-        start_epoch: Epoch to start training from, optional.
+        start_epoch: Number of epochs completed, optional.
+        start_step: Number of optimizer steps taken, optional.
+        start_images: Number of images seen, optional.
         output_dir: Parent directory to save the weights to.
         save_period: Period (in epochs) to save the model weights, optional.
         max_grad_norm: Maximum gradient norm for clipping, optional.
         enable_wandb: Whether to log to Weights & Biases, optional.
     """
 
-    cumulative_step, cumulative_images = 0, 0
+    cumulative_step, cumulative_images = start_step, start_images
 
     for epoch in range(start_epoch, num_epochs):
         epoch_start_time = time.perf_counter()
@@ -143,6 +147,6 @@ def train(
         # Save the model weights
         if (epoch + 1) % save_period == 0 or (epoch + 1) == num_epochs:
             checkpoint_dir = Path(output_dir) / f"{epoch + 1}"
-            save_checkpoint(accelerator, checkpoint_dir, model, ema_model)
+            save_checkpoint(accelerator, checkpoint_dir, model, ema_model, epoch=epoch + 1, step=cumulative_step, images=cumulative_images)
 
         torch.cuda.empty_cache()

@@ -23,17 +23,28 @@ def save_checkpoint(
     checkpoint_path: Union[str, Path],
     model: Optional[DETR] = None,
     ema_model: Optional[AveragedModel] = None,
+    *,
+    epoch: int,
+    step: int,
+    images: int,
 ) -> None:
     """
-    Saves the accelerator state and optionally the EMA model weights.
+    Saves the accelerator state, training state, and optionally the EMA model weights.
 
     Args:
         accelerator: Accelerator object.
         checkpoint_path: Path to save the checkpoint to.
         model: The model to checkpoint, optional.
         ema_model: The EMA model to checkpoint, optional.
+        epoch: Number of completed epochs.
+        step: Number of optimizer steps taken.
+        images: Number of images seen.
     """
     accelerator.save_state(checkpoint_path)
+
+    if accelerator.is_main_process:
+        training_state_path = Path(checkpoint_path) / "training_state.json"
+        training_state_path.write_text(json.dumps({"epoch": epoch, "step": step, "images": images}))
 
     # Retrieve metadata from the model if provided
     metadata = None
@@ -57,14 +68,17 @@ def load_checkpoint(
     accelerator: Accelerator,
     checkpoint_path: Union[str, Path],
     ema_model: Optional[AveragedModel] = None,
-) -> None:
+) -> Dict[str, int]:
     """
-    Loads the accelerator state and optionally the EMA model weights.
+    Loads the accelerator state, training state, and optionally the EMA model weights.
 
     Args:
         accelerator: Accelerator object.
         checkpoint_path: Path to load the checkpoint from.
         ema_model: The EMA model to load to, optional.
+
+    Returns:
+        training_state: The completed epochs, steps, and images.
     """
 
     logging.info(f"Loading checkpoint from {checkpoint_path}")
@@ -75,6 +89,11 @@ def load_checkpoint(
         ema_path = Path(checkpoint_path) / "ema_model.safetensors"
         ema_model.load_state_dict(load_file(ema_path, device="cpu"))
         logging.info("All EMA model weights loaded successfully")
+
+    training_state_path = Path(checkpoint_path) / "training_state.json"
+    training_state = json.loads(training_state_path.read_text())
+
+    return training_state
 
 
 def load_state_dict(pretrained_weights: Union[str, Path]) -> Dict[str, Tensor]:
