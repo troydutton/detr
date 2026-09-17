@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from criterion import Criterion
 from evaluators import Evaluator
-from models import DETR
+from models import DETR, Predictions
 
 
 @torch.no_grad()
@@ -48,8 +48,9 @@ def evaluate(
         # Forward pass
         predictions = model(images)
 
-        # Calculate the loss
-        batch_losses = criterion(predictions, targets, accelerator)
+        # Calculate the loss on the final decoder layer
+        final_predictions = Predictions(predictions[0].boxes[:, -1:], predictions[0].class_logits[:, -1:])
+        batch_losses = criterion((final_predictions, None, None), targets, accelerator)
 
         losses = {k: losses.get(k, 0) + torch.mean(accelerator.reduce(v, reduction="mean")).item() for k, v in batch_losses.items()}
 
