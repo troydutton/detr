@@ -154,9 +154,11 @@ def train_one_epoch(
                             "images": cumulative_images,
                             "loss": losses,
                             "grad_norm": grad_norm,
+                            "objects_per_image": objects_in_window / images_in_window,
+                        },
+                        "throughput": {
                             "images_per_second": images_in_window / window_duration,
                             "steps_per_second": 1 / window_duration,
-                            "objects_per_image": objects_in_window / images_in_window,
                         },
                     }
                 )
