@@ -61,6 +61,7 @@ def main(args: DictConfig) -> None:
         wandb.define_metric("train.step")
         wandb.define_metric("train.images")
         wandb.define_metric("train.*", step_metric="train.step")
+        wandb.define_metric("throughput.*", step_metric="train.step")
         wandb.define_metric("val.*", step_metric="epoch")
         wandb.define_metric("lr.*", step_metric="epoch")
 
@@ -113,7 +114,7 @@ def main(args: DictConfig) -> None:
     model = DETR(**args["model"])
 
     # Create EMA model
-    ema_model = AveragedModel(model, multi_avg_fn=instantiate(args["ema"]))
+    ema_model = AveragedModel(model, device=accelerator.device, multi_avg_fn=instantiate(args["ema"]))
 
     # Create optimizer (config/optimizer/*.yaml)
     lr = args["optimizer"]["lr"]
@@ -153,8 +154,6 @@ def main(args: DictConfig) -> None:
         args["train"]["start_epoch"] = training_state["epoch"]
         args["train"]["start_step"] = training_state["step"]
         args["train"]["start_images"] = training_state["images"]
-
-    ema_model = ema_model.to(accelerator.device)
 
     del args["train"]["batch_size"]
     del args["train"]["num_workers"]
