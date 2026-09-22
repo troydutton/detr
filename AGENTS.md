@@ -25,6 +25,7 @@ This project uses `pytest` unit tests located in `tests/` to verify functionalit
 
 ### Launching Runs
 The W&B run name is taken from the final component of `train.output_dir`.
+- **ALWAYS** launch with `accelerate launch src/train.py <overrides>`. 
 - Debugging, smoke tests, and other temporary runs must not log to W&B: pass `train.enable_wandb=False`.
 - Real runs and experiments are named `dataset-size-notes`, e.g. `lrdd-small-no-edge-offsets`, `coco-small`, or `o365-large-higher-resolution`.
 
