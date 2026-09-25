@@ -1,0 +1,5 @@
+_target_: optimizers.MuonH
+lr: 3e-4
+lr_backbone: 3e-4
+backbone_layer_decay: 0.8
+weight_decay: 0.0

@@ -137,7 +137,7 @@ def train(
 
         # Log the losses, metrics, and learning rates for this epoch
         if accelerator.is_main_process and enable_wandb:
-            learning_rates = {str(group["name"]).removesuffix(".no_decay"): group["lr"] for group in optimizer.param_groups}
+            learning_rates = {str(group["name"]).removesuffix(".no_decay").removesuffix(".no_muon"): group["lr"] for group in optimizer.param_groups}  # fmt: skip
             wandb.log({"epoch": epoch + 1, "val": {"loss": val_losses, "metric": val_metrics}, "lr": learning_rates})
 
         logging.info(f" Epoch {epoch + 1} | {timedelta(seconds=int(epoch_duration))} ".center(65, "="))
