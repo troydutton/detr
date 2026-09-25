@@ -43,7 +43,7 @@ def build_parameter_groups(
     projector lives inside the backbone but is not pretrained, so it is excluded from
     the decay and kept at the default learning rate.
 
-    We also exclude biases, normalization parameters, and embeddings from weight decay.
+    We also exclude biases, normalization parameters, and embeddings from weight decay and from the Muon update.
 
     Args:
         model: Model with parameters.
@@ -78,12 +78,18 @@ def build_parameter_groups(
             group_lr = lr
             num_default += param.numel()
 
-        # Determine weight decay
-        if _should_apply_weight_decay(name, param):
+        # Determine weight decay and whether the parameter takes the Muon update
+        is_weight_matrix = _is_weight_matrix(name, param)
+        if is_weight_matrix:
             group_weight_decay = weight_decay
         else:
             group_name += ".no_decay"
             group_weight_decay = 0.0
+
+        # Zero-initialized matrices are left to Adam so that the initialization is not immediately orthogonalized
+        use_muon = is_weight_matrix and bool(param.count_nonzero() > 0)
+        if is_weight_matrix and not use_muon:
+            group_name += ".no_muon"
 
         if group_name not in param_groups:
             param_groups[group_name] = {
@@ -91,6 +97,7 @@ def build_parameter_groups(
                 "params": [param],
                 "lr": group_lr,
                 "weight_decay": group_weight_decay,
+                "muon": use_muon,
             }
         else:
             param_groups[group_name]["params"].append(param)
@@ -121,11 +128,11 @@ def _get_backbone_layer_id(name: str, num_layers: int) -> int:
     return int(match.group(1)) + 1 if match else num_layers + 1
 
 
-def _should_apply_weight_decay(name: str, param: Tensor) -> bool:
+def _is_weight_matrix(name: str, param: Tensor) -> bool:
     """
-    Determine whether to apply weight decay to a parameter based on its name.
+    Determine whether a parameter is a weight matrix, which decides both weight decay and the Muon update.
 
-    We apply weight decay to all parameters except for those that are
+    We treat all parameters as weight matrices except for those that are
         - 1D (like biases or normalization parameters), or
         - explicitly identified as embeddings (like positional embeddings or query embeddings)
     """
