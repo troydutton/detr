@@ -12,6 +12,8 @@ from transformers import Dinov2WithRegistersModel as HFDinov2WithRegistersModel
 
 from utils.misc import take_annotation_from
 
+from .layers.pi_resize import resize_embeddings
+
 transformers.utils.logging.disable_progress_bar()
 
 
@@ -644,60 +646,7 @@ class Dinov2WithRegistersModel(Dinov2WithRegistersPreTrainedModel):
         # We don't mask tokens
         del state_dict["embeddings.mask_token"]
 
-        # Interpolate positional embeddings (i.e. if the image or patch size changes)
-        old_pos_embed = state_dict["embeddings.position_embeddings"]
-        new_pos_embed = self.embeddings.position_embeddings
-
-        if old_pos_embed.shape != new_pos_embed.shape:
-            # Separate the class and patch tokens
-            old_cls_pos_embed, old_patch_pos_embed = old_pos_embed[:, :1], old_pos_embed[:, 1:]
-            new_patch_pos_embed = new_pos_embed[:, 1:]
-
-            # Calculate the side lengths
-            _, old_num_patches, embed_dim = old_patch_pos_embed.shape
-            _, new_num_patches, _ = new_patch_pos_embed.shape
-
-            old_size = int(sqrt(old_num_patches))
-            new_size = int(sqrt(new_num_patches))
-
-            logging.info(f"Interpolating positional embeddings: ({old_size}, {old_size}) -> ({new_size}, {new_size}).")
-
-            # Restore spatial dimensions, interpolate, and flatten again
-            old_patch_pos_embed = old_patch_pos_embed.reshape(1, old_size, old_size, embed_dim)
-            old_patch_pos_embed = old_patch_pos_embed.permute(0, 3, 1, 2)
-
-            patch_pos_embed = F.interpolate(
-                old_patch_pos_embed.float(),
-                size=(new_size, new_size),
-                mode="bicubic",
-                align_corners=False,
-            ).to(old_patch_pos_embed.dtype)
-
-            patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1)
-            patch_pos_embed = patch_pos_embed.reshape(1, new_num_patches, embed_dim)
-
-            pos_embed = torch.cat((old_cls_pos_embed, patch_pos_embed), dim=1)
-
-            state_dict["embeddings.position_embeddings"] = pos_embed
-
-        # Interpolate patch embeddings (i.e. if the patch size changes)
-        old_patch_embeddings = state_dict["embeddings.patch_embeddings.projection.weight"]
-        new_patch_embeddings = self.embeddings.patch_embeddings.projection.weight
-
-        if old_patch_embeddings.shape != new_patch_embeddings.shape:
-            old_patch_size = tuple(old_patch_embeddings.shape[-2:])
-            new_patch_size = self.embeddings.patch_embeddings.patch_size
-
-            logging.info(f"Interpolating patch embeddings: {old_patch_size} -> {new_patch_size}.")
-
-            patch_embeddings = F.interpolate(
-                old_patch_embeddings.float(),
-                size=new_patch_size,
-                mode="bicubic",
-                align_corners=False,
-            ).to(old_patch_embeddings.dtype)
-
-            state_dict["embeddings.patch_embeddings.projection.weight"] = patch_embeddings
+        state_dict = resize_embeddings(state_dict, self.state_dict())
 
         incompatible = self.load_state_dict(state_dict, strict=False)
 

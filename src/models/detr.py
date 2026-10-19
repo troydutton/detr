@@ -13,6 +13,7 @@ from utils.postprocess import Detections, postprocess
 from .backbone import Backbone
 from .decoder import Predictions, TransformerDecoder
 from .encoder import TransformerEncoder
+from .layers.pi_resize import resize_embeddings
 
 VALID_WEIGHT_FILES = ["ema_model.safetensors", "model.safetensors"]
 
@@ -147,6 +148,9 @@ class DETR(nn.Module):
             for key in list(state_dict.keys()):
                 if "class_head" in key or "label_embed" in key:
                     state_dict.pop(key)
+
+        # When changing the image or patch size the backbone embeddings must be resized
+        state_dict = resize_embeddings(state_dict, self.state_dict())
 
         incompatible = self.load_state_dict(state_dict, strict=False)
 
