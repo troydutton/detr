@@ -27,7 +27,7 @@ from evaluators import CocoEvaluator
 from models import DETR
 from utils.checkpoint import load_checkpoint
 from utils.lr import prepare_scheduler_arguments
-from utils.optimizer import build_parameter_groups
+from utils.parameter_groups import build_parameter_groups
 
 Args = Dict[str, Union[Any, "Args"]]
 

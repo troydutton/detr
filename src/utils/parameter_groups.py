@@ -6,7 +6,7 @@ from torch import Tensor
 
 from models import DETR
 
-# We exclude the projector from
+# We exclude the projector from the backbone's learning rate decay
 EXCLUDE_BACKBONE_LAYERS = ["backbone.projector"]
 
 # We don't apply weight decay to embedding parameters because they act
@@ -78,12 +78,18 @@ def build_parameter_groups(
             group_lr = lr
             num_default += param.numel()
 
-        # Determine weight decay
-        if _should_apply_weight_decay(name, param):
+        # Determine whether we should apply the muon update and weight decay
+        is_weight_matrix = _is_weight_matrix(name, param)
+        if is_weight_matrix:
             group_weight_decay = weight_decay
         else:
             group_name += ".no_decay"
             group_weight_decay = 0.0
+
+        # Munon is not compatible with zero initialized weight matrices
+        use_muon = is_weight_matrix and bool(param.count_nonzero() > 0)
+        if is_weight_matrix and not use_muon:
+            group_name += ".no_muon"
 
         if group_name not in param_groups:
             param_groups[group_name] = {
@@ -91,6 +97,7 @@ def build_parameter_groups(
                 "params": [param],
                 "lr": group_lr,
                 "weight_decay": group_weight_decay,
+                "muon": use_muon,
             }
         else:
             param_groups[group_name]["params"].append(param)
@@ -121,11 +128,11 @@ def _get_backbone_layer_id(name: str, num_layers: int) -> int:
     return int(match.group(1)) + 1 if match else num_layers + 1
 
 
-def _should_apply_weight_decay(name: str, param: Tensor) -> bool:
+def _is_weight_matrix(name: str, param: Tensor) -> bool:
     """
-    Determine whether to apply weight decay to a parameter based on its name.
+    Determine whether a parameter is a weight matrix.
 
-    We apply weight decay to all parameters except for those that are
+    We treat all parameters as weight matrices except for those that are
         - 1D (like biases or normalization parameters), or
         - explicitly identified as embeddings (like positional embeddings or query embeddings)
     """

@@ -3,7 +3,7 @@ defaults:
   - dataset: coco
   - transforms: small
   - model: small
-  - optimizer: adamw
+  - optimizer: muonh
   - scheduler: step
   - criterion: set
   - ema: warmup
@@ -11,9 +11,9 @@ defaults:
 
 train:
   output_dir: /path/to/output/dir
-  num_epochs: 24
+  num_epochs: 16
   num_warmup_epochs: 2
-  num_cooldown_epochs: 12
+  num_cooldown_epochs: 4
   num_finetune_epochs: 2
   batch_size: 16
   num_workers: 4
