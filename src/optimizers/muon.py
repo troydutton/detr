@@ -19,10 +19,7 @@ RMS_MATCH_SCALE = 0.2
 
 class Muon(Optimizer):
     """
-    Muon with decoupled weight decay, falling back to Adam for parameters that are not weight matrices.
-
-    Parameter groups flagged with `muon` are updated with an orthogonalized momentum step, scaled per matrix to match
-    the update RMS of AdamW. All other groups are updated with decoupled weight decay Adam.
+    Muon with decoupled weight decay, falling back to AdamW for parameters that are not weight matrices.
 
     Args:
         params: Parameters or parameter groups to optimize.

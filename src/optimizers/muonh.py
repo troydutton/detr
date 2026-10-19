@@ -10,9 +10,6 @@ class MuonH(Muon):
     """
     Muon with Hyperball projection on weight matrices, see https://arxiv.org/abs/2606.16899.
 
-    Weight matrices are kept at their initial Frobenius norm and stepped by a fixed fraction `lr` of that norm along
-    the orthogonalized update, so weight decay only applies to the Adam groups.
-
     Args:
         params: Parameters or parameter groups to optimize.
         lr: Angular step size for weight matrices and learning rate for Adam groups.

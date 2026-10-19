@@ -6,7 +6,7 @@ from torch import Tensor
 
 from models import DETR
 
-# We exclude the projector from
+# We exclude the projector from the backbone's learning rate decay
 EXCLUDE_BACKBONE_LAYERS = ["backbone.projector"]
 
 # We don't apply weight decay to embedding parameters because they act
@@ -43,7 +43,7 @@ def build_parameter_groups(
     projector lives inside the backbone but is not pretrained, so it is excluded from
     the decay and kept at the default learning rate.
 
-    We also exclude biases, normalization parameters, and embeddings from weight decay and from the Muon update.
+    We also exclude biases, normalization parameters, and embeddings from weight decay.
 
     Args:
         model: Model with parameters.
@@ -78,7 +78,7 @@ def build_parameter_groups(
             group_lr = lr
             num_default += param.numel()
 
-        # Determine weight decay and whether the parameter takes the Muon update
+        # Determine whether we should apply the muon update and weight decay
         is_weight_matrix = _is_weight_matrix(name, param)
         if is_weight_matrix:
             group_weight_decay = weight_decay
@@ -86,7 +86,7 @@ def build_parameter_groups(
             group_name += ".no_decay"
             group_weight_decay = 0.0
 
-        # Zero-initialized matrices are left to Adam so that the initialization is not immediately orthogonalized
+        # Munon is not compatible with zero initialized weight matrices
         use_muon = is_weight_matrix and bool(param.count_nonzero() > 0)
         if is_weight_matrix and not use_muon:
             group_name += ".no_muon"
@@ -130,7 +130,7 @@ def _get_backbone_layer_id(name: str, num_layers: int) -> int:
 
 def _is_weight_matrix(name: str, param: Tensor) -> bool:
     """
-    Determine whether a parameter is a weight matrix, which decides both weight decay and the Muon update.
+    Determine whether a parameter is a weight matrix.
 
     We treat all parameters as weight matrices except for those that are
         - 1D (like biases or normalization parameters), or
