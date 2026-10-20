@@ -47,11 +47,15 @@ class Dinov2WithRegistersPatchEmbeddings(nn.Module):
         self.projection = nn.Conv2d(self.num_channels, self.hidden_size, kernel_size=self.patch_size, stride=self.patch_size)
 
     def forward(self, images: Tensor) -> Tensor:
-        # Patchify the images
-        embeddings: Tensor = self.projection(images)
+        # Get batch information
+        batch_size, num_channels, height, width = images.shape
+        patch_height, patch_width = self.patch_size
 
-        # Collapse the spatial dimensions and move the embedding dimension to the end
-        embeddings = embeddings.flatten(2).transpose(1, 2)
+        # Patchify the images (as a linear layer, which is faster than a strided convolution in TensorRT)
+        patches = images.view(batch_size, num_channels, height // patch_height, patch_height, width // patch_width, patch_width)
+        patches = patches.permute(0, 2, 4, 1, 3, 5).reshape(batch_size, -1, num_channels * patch_height * patch_width)
+
+        embeddings = F.linear(patches, self.projection.weight.flatten(1), self.projection.bias)
 
         return embeddings
 
@@ -186,8 +190,11 @@ class Dinov2WithRegistersSelfAttention(nn.Module):
         # Get batch information
         batch_size, seq_length, embed_dim = embeddings.shape
 
-        # Project the embeddings and reshape for multi-head attention
-        q: Tensor = self.query(embeddings)
+        # Project the embeddings and reshape for multi-head attention (scaling the queries here keeps TensorRT's attention fused)
+        scale = self.head_dim**-0.5
+        query_bias = self.query.bias * scale if self.query.bias is not None else None
+
+        q: Tensor = F.linear(embeddings, self.query.weight * scale, query_bias)
         k: Tensor = self.key(embeddings)
         v: Tensor = self.value(embeddings)
 
@@ -196,7 +203,7 @@ class Dinov2WithRegistersSelfAttention(nn.Module):
         v = v.view(batch_size, seq_length, self.num_heads, self.head_dim).transpose(1, 2)
 
         # Perform attention
-        attention_output = F.scaled_dot_product_attention(q, k, v, dropout_p=self.dropout_prob if self.training else 0.0)
+        attention_output = F.scaled_dot_product_attention(q, k, v, dropout_p=self.dropout_prob if self.training else 0.0, scale=1.0)
 
         # Restore original shape
         attention_output = attention_output.transpose(1, 2).contiguous()

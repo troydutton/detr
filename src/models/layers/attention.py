@@ -42,11 +42,12 @@ class MultiheadAttention(nn.Module):
         # Get batch information
         batch_size, num_queries, _ = queries.shape
 
-        # Project the inputs and separate the heads
+        # Project the inputs and separate the heads (scaling the queries here keeps TensorRT's attention fused)
         query_weight, key_weight, value_weight = self.in_proj_weight.chunk(3, dim=0)
         query_bias, key_bias, value_bias = self.in_proj_bias.chunk(3, dim=0)
+        scale = self.head_dim**-0.5
 
-        queries = F.linear(queries, query_weight, query_bias).view(batch_size, num_queries, self.num_heads, self.head_dim)
+        queries = F.linear(queries, query_weight * scale, query_bias * scale).view(batch_size, num_queries, self.num_heads, self.head_dim)
         keys = F.linear(keys, key_weight, key_bias).view(batch_size, -1, self.num_heads, self.head_dim)
         values = F.linear(values, value_weight, value_bias).view(batch_size, -1, self.num_heads, self.head_dim)
 
@@ -57,6 +58,7 @@ class MultiheadAttention(nn.Module):
             values.transpose(1, 2),
             attn_mask=attention_mask,
             dropout_p=self.dropout if self.training else 0.0,
+            scale=1.0,
         )
 
         # Restore the original shape and project the output
