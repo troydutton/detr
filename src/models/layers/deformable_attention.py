@@ -92,7 +92,7 @@ class MultiHeadDeformableAttention(nn.Module):
         attention_weights = attention_weights.transpose(1, 2)
 
         # Perform attention
-        output = torch.einsum("bhcqp,bhqp->bhcq", sampled_values, attention_weights)
+        output = (sampled_values * attention_weights.unsqueeze(2)).sum(dim=-1)
 
         # Restore original shape
         output = output.reshape(batch_size, embed_dim, num_queries).transpose(1, 2)
