@@ -28,6 +28,7 @@ def test_detr_forward() -> None:
         "embed_dim": embed_dim,
         "backbone": {
             "feature_extractor": {
+                "_target_": "models.dinov2.Dinov2WithRegistersModel",
                 "name": "facebook/dinov2-with-registers-small",
                 "image_size": 512,
                 "patch_size": 16,
@@ -161,6 +162,7 @@ def test_detr_predict() -> None:
         "embed_dim": embed_dim,
         "backbone": {
             "feature_extractor": {
+                "_target_": "models.dinov2.Dinov2WithRegistersModel",
                 "name": "facebook/dinov2-with-registers-small",
                 "image_size": 512,
                 "patch_size": 16,

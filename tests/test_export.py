@@ -63,6 +63,7 @@ def test_export(tmp_path: Path, dummy_coco: Path) -> None:
                 "backbone": {
                     "embed_dim": embed_dim,
                     "feature_extractor": {
+                        "_target_": "models.dinov2.Dinov2WithRegistersModel",
                         "name": "facebook/dinov2-with-registers-small",
                         "image_size": 512,
                         "patch_size": 16,
