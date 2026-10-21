@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 import numpy as np
 import torch
 from accelerate import Accelerator
+from faster_coco_eval import COCOeval_faster as COCOeval
 from pycocotools.coco import COCO
-from pycocotools.cocoeval import COCOeval
 from torchvision.ops import box_convert
 
 from utils.misc import silence_stdout

@@ -17,6 +17,7 @@ dependencies:
   - pillow
   - matplotlib
   - pycocotools
+  - faster-coco-eval
   - accelerate
   - transformers
   - timm
