@@ -6,7 +6,7 @@ This project implements the DETR (DEtection TRansformer) model for object detect
 All source code is located in the `src/` directory. The main entry points include `train.py`, `evaluate.py`, `inference.py`, and `export.py`. The primary training and evaluation loop is located in `engine/` (`train.py`, `train_one_epoch.py`, `evaluate.py`).
 
 The primary modules are:
- - `models/`: Contains the model definition (`detr.py`), feature extractor (`dinov2.py`), backbone (`backbone.py`), multi-scale projector (`projector.py`), transformers (`encoder.py`, `decoder.py`). Layers and useful utilities are located in `layers/` (e.g. `deformable_attention.py`, `positional_embedding.py`, etc...).
+ - `models/`: Contains the model definition (`detr.py`), feature extractors (`dinov2.py`, `dinov3.py`), backbone (`backbone.py`), multi-scale projector (`projector.py`), transformers (`encoder.py`, `decoder.py`). Layers and useful utilities are located in `layers/` (e.g. `deformable_attention.py`, `positional_embedding.py`, etc...).
  - `data/`: Data loading (`coco_dataset.py`, `image_dataset.py`) and transformation utilities (`transforms/`: `transforms.py`, `mosaic.py`, `random_erasing.py`, `random_resize.py`, `constants.py`).
  - `criterion/`: Loss functions (`criterion.py`) and matching algorithms (`hungarian_matcher.py`).
  - `optimizers/`: Muon (`muon.py`) and MuonH (`muonh.py`) optimizers.

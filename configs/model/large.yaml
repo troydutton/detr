@@ -17,6 +17,7 @@ label_noise_prob: 0.25
 backbone:
   embed_dim: ${model.embed_dim}
   feature_extractor:
+    _target_: models.dinov2.Dinov2WithRegistersModel
     name: facebook/dinov2-with-registers-small
     image_size: ${transforms.val.resolution}
     patch_size: 16

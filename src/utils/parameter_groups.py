@@ -123,7 +123,7 @@ def _get_backbone_layer_id(name: str, num_layers: int) -> int:
     if ".embeddings." in name:
         return 0
 
-    match = re.search(r"encoder\.layer\.(\d+)", name)
+    match = re.search(r"\.layer\.(\d+)", name)
 
     return int(match.group(1)) + 1 if match else num_layers + 1
 

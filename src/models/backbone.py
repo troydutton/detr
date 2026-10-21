@@ -4,11 +4,11 @@ from typing import List
 
 import torch
 import torch.nn as nn
+from hydra.utils import instantiate
 from torch import Tensor
 
 from utils.misc import take_annotation_from
 
-from .dinov2 import Dinov2WithRegistersModel
 from .layers.positional_embedding import build_pos_embed
 from .projector import Projector
 
@@ -39,8 +39,9 @@ class Backbone(nn.Module):
     """
     Args:
         embed_dim: Dimension of the output embeddings.
+        pretrained: Whether to load pretrained weights for the feature extractor, optional.
         **kwargs: Arguments to construct the feature extractor and projector.
-            See `models.dinov2.Dinov2WithRegistersModel` and `models.projector.Projector`.
+            See `models.dinov2.Dinov2WithRegistersModel`, `models.dinov3.DINOv3ViTModel`, and `models.projector.Projector`.
     """
 
     def __init__(
@@ -48,6 +49,7 @@ class Backbone(nn.Module):
         embed_dim: int,
         *,
         enable_level_pos: bool = False,
+        pretrained: bool = True,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -55,7 +57,7 @@ class Backbone(nn.Module):
         self.embed_dim = embed_dim
 
         # Initialize the feature extractor
-        self.feature_extractor = Dinov2WithRegistersModel(**kwargs["feature_extractor"])
+        self.feature_extractor = instantiate(kwargs["feature_extractor"], pretrained=pretrained, _convert_="all")
 
         # Initialize the projector
         feature_channels = [self.feature_extractor.config.hidden_size for _ in self.feature_extractor.out_feature_indices]
