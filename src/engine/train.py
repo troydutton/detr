@@ -96,7 +96,7 @@ def train(
         elif epoch == num_warmup_epochs:
             logging.info("Enabling heavy augmentations.")
         if epoch == num_epochs - num_finetune_epochs:
-            logging.info("Disabling all augmentations.")
+            logging.info("Disabling augmentations except multi-scale resizing.")
 
         data = train_data if epoch < num_epochs - num_finetune_epochs else finetune_data
 
