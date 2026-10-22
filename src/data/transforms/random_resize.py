@@ -34,7 +34,7 @@ class DiscreteRandomResize:
             return images, targets
 
         # Resize the images and update the target sizes accordingly
-        images = F.interpolate(images, size=(resolution, resolution), mode="bilinear")
+        images = F.interpolate(images, size=(resolution, resolution), mode="bilinear", antialias=True)
         device = images.device
         for target in targets:
             target["size"] = torch.tensor([resolution, resolution], dtype=torch.int64, device=device)
