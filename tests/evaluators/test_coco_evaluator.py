@@ -60,7 +60,7 @@ def create_mock_predictions(boxes, classes, num_layers=1, num_groups=1, num_clas
 
 
 def test_coco_evaluator_simple(coco_gt: COCO):
-    evaluator = CocoEvaluator(coco_gt)
+    evaluator = CocoEvaluator(coco_gt, num_detections=None)
 
     # Check label map
     # Categories are 1 and 2. Sorted: 1 -> 0, 2 -> 1.
@@ -111,7 +111,7 @@ def test_coco_evaluator_multi_layer(coco_gt: COCO):
     Test that CocoEvaluator only uses the final layer for evaluation,
     ignoring intermediate decoder layer outputs.
     """
-    evaluator = CocoEvaluator(coco_gt)
+    evaluator = CocoEvaluator(coco_gt, num_detections=None)
 
     # create_mock_predictions already puts zeroes in intermediate layers
     # and correct predictions only in the final layer
@@ -170,7 +170,7 @@ def test_coco_evaluator_batch(tmp_path: Path):
     with silence_stdout():
         coco_gt = COCO(ann_file)
 
-    evaluator = CocoEvaluator(coco_gt)
+    evaluator = CocoEvaluator(coco_gt, num_detections=None)
 
     # Image 1: [10, 20, 30, 40] -> cx=0.25, cy=0.5, w=0.3, h=0.5
     # Image 1: [50, 10, 20, 30] -> cx=0.6, cy=0.3125, w=0.2, h=0.375
@@ -211,7 +211,7 @@ def test_coco_evaluator_class_metrics(coco_gt: COCO):
     """
     Test CocoEvaluator computes per-class metrics when class_metrics=True.
     """
-    evaluator = CocoEvaluator(coco_gt, class_metrics=True)
+    evaluator = CocoEvaluator(coco_gt, class_metrics=True, num_detections=None)
 
     # Person box is correct, Dog box is completely wrong
     preds = create_mock_predictions(boxes=[[[0.25, 0.5, 0.3, 0.5], [0.9, 0.9, 0.1, 0.1]]], classes=[[0, 1]])
