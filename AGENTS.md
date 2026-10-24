@@ -17,16 +17,16 @@ Configuration files (`configs/`) use the Hydra format, and unit tests (`tests/`)
 
 ## Development
 ### Environment Management
-**ALWAYS** activate the conda environment before running any programs, tests, or python commands.
-- Command: `conda activate detr`
+**ALWAYS** run programs, tests, and python commands inside the uv environment with `uv run`.
+- Command: `uv run <command>`
 
 ### Testing
 This project uses `pytest` unit tests located in `tests/` to verify functionality.
-- Command: `conda activate detr && pytest tests/`
+- Command: `uv run pytest tests/`
 
 ### Launching Runs
 The W&B run name is taken from the final component of `train.output_dir`.
-- **ALWAYS** launch with `accelerate launch src/train.py <overrides>`. 
+- **ALWAYS** launch with `uv run accelerate launch src/train.py <overrides>`. 
 - Debugging, smoke tests, and other temporary runs must not log to W&B: pass `train.enable_wandb=False`.
 - Real runs and experiments are named `dataset-size-notes`, e.g. `lrdd-small-no-edge-offsets`, `coco-small`, or `o365-large-higher-resolution`.
 
