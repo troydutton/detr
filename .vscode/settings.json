@@ -5,11 +5,11 @@
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
     "chat.tools.terminal.autoApprove": {
-        "/^conda run -n detr pytest tests/$/": {
+        "/^uv run pytest tests/$/": {
             "approve": true,
             "matchCommandLine": true
         }
     },
-    "python-envs.defaultEnvManager": "ms-python.python:conda",
-    "python-envs.defaultPackageManager": "ms-python.python:conda"
+    "python-envs.defaultEnvManager": "ms-python.python:venv",
+    "python-envs.defaultPackageManager": "ms-python.python:pip"
 }

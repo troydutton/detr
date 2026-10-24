@@ -5,37 +5,34 @@ Transformer-based object detection
 The instructions for setting up the development environment are provided below.
 
 ## Setup
-The setup script creates a new conda environment, installs the required dependencies, and sets up pre-commit hooks. It should be run from the root of the repository, and can be run multiple times without issue.
+Dependencies are managed with [uv](https://docs.astral.sh/uv/). Syncing creates a `.venv` with the GPU dependencies, and installing the pre-commit hooks runs formatting, linting, and tests on every commit. Commands are then run inside the environment with `uv run`.
 
 ```bash
-./scripts/setup.sh
+uv sync
+uv run pre-commit install
 ```
 
-After execution, the environment can be activated using `conda`.
-
-```bash
-conda activate detr
-```
+A CPU-only environment can be created instead with `uv sync --no-default-groups --group cpu --group dev`.
 
 ## Testing
 The codebase uses `pytest` for testing. It is run as part of the pre-commit hooks, but can also be run manually.
 
 ```bash
-pytest tests/
+uv run pytest tests/
 ```
 
 ## Formatting
 The codebase uses `black` for formatting. It is run as part of the pre-commit hooks, but can also be run manually.
 
 ```bash
-black src/ tests/
+uv run black src/ tests/
 ```
 
 ## Linting
 The codebase uses `ruff` for linting. It is run as part of the pre-commit hooks, but can also be run manually.
 
 ```bash
-ruff check --fix src/ tests/
+uv run ruff check --fix src/ tests/
 ```
 
 # Usage
@@ -45,26 +42,26 @@ The instructions for training, evaluating, exporting, and benchmarking models ar
 To train a model, update `configs/train.yaml` and run `train.py`.
 
 ```bash
-accelerate launch src/train.py <additional-args>
+uv run accelerate launch src/train.py <additional-args>
 ```
 
 ## Evaluation
 To evaluate a model, update `configs/evaluate.yaml` and run `evaluate.py`.
 
 ```bash
-accelerate launch src/evaluate.py <additional-args>
+uv run accelerate launch src/evaluate.py <additional-args>
 ```
 
 ## Exporting
 To export a model, update `configs/export.yaml` and run `export.py`.
 
 ```bash
-accelerate launch src/export.py <additional-args>
+uv run accelerate launch src/export.py <additional-args>
 ```
 
 ## Benchmarking
 To benchmark a model, first export the model as described above, then use `trtexec` to run inference.
 
 ```bash
-trtexec --onnx=<path-to-onnx> --memPoolSize=workspace:4096 --warmUp=500 --avgRuns=1000 --duration=10
+uv run trtexec --onnx=<path-to-onnx> --memPoolSize=workspace:4096 --warmUp=500 --avgRuns=1000 --duration=10
 ```
