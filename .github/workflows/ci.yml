@@ -9,12 +9,33 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  UV_NO_SYNC: "1"
+
 jobs:
-  checks:
+  format:
+    name: Format checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      UV_NO_SYNC: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "0.11.8"
+          enable-cache: true
+      - run: uv sync --locked --only-group dev
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+      - run: uv run pre-commit run --all-files --show-diff-on-failure
+        env:
+          SKIP: pytest
+
+  tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
@@ -22,8 +43,4 @@ jobs:
           version: "0.11.8"
           enable-cache: true
       - run: uv sync --locked --no-default-groups --group cpu --group dev
-      - uses: actions/cache@v6
-        with:
-          path: ~/.cache/pre-commit
-          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
-      - run: uv run pre-commit run --all-files --show-diff-on-failure
+      - run: uv run pytest tests/
