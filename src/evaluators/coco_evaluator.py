@@ -25,11 +25,13 @@ class CocoEvaluator(Evaluator):
     Args:
         coco_targets: Ground truth COCO dataset.
         class_metrics: Whether to compute per-class metrics.
+        num_detections: Number of top-scoring (query, class) pairs kept per image, or `None` for one label per query.
     """
 
-    def __init__(self, coco_targets: COCO, class_metrics: bool = False) -> None:
+    def __init__(self, coco_targets: COCO, class_metrics: bool = False, num_detections: Optional[int] = 300) -> None:
         self.coco_targets = coco_targets
         self.class_metrics = class_metrics
+        self.num_detections = num_detections
         self.predictions: List[Dict[str, Any]] = []
 
         # Mapping from contiguous 0-indexed labels to category ids
@@ -53,7 +55,15 @@ class CocoEvaluator(Evaluator):
         decoder_predictions, _, _ = predictions
         boxes = decoder_predictions.boxes[:, -1, 0]
         logits = decoder_predictions.class_logits[:, -1, 0]
-        scores, labels = logits.sigmoid().max(dim=-1)
+
+        if self.num_detections is None:
+            scores, labels = logits.sigmoid().max(dim=-1)
+        else:
+            # Keep the highest scoring (query, class) pairs, allowing multiple labels per query
+            num_queries, num_classes = logits.shape[1:]
+            scores, indices = logits.sigmoid().flatten(1).topk(min(self.num_detections, num_queries * num_classes), dim=-1)
+            labels = indices % num_classes
+            boxes = boxes.gather(1, (indices // num_classes).unsqueeze(-1).expand(-1, -1, 4))
 
         # Extract image ids and scales
         image_scales = torch.empty(((batch_size := len(targets)), 4), dtype=boxes.dtype, device=(device := boxes.device))

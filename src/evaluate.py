@@ -64,7 +64,7 @@ def main(args: DictConfig) -> None:
     criterion: Criterion = instantiate(args["criterion"])
 
     # Create evaluator
-    evaluator: CocoEvaluator = CocoEvaluator(coco_targets=val_dataset.coco, class_metrics=True)
+    evaluator: CocoEvaluator = CocoEvaluator(coco_targets=val_dataset.coco, class_metrics=True, num_detections=args["num_detections"])
 
     # Start evaluation
     losses, metrics = evaluate(
