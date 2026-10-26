@@ -5,7 +5,7 @@ ffn_dim: 1024
 num_heads: 8
 num_deformable_heads: 16
 num_points: 2
-dropout: 0.1
+dropout: 0.0
 num_groups: 13
 num_queries: 200
 num_denoise_queries: 300
