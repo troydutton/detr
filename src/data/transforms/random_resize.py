@@ -8,6 +8,8 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
+from .constants import LABEL_KEYS
+
 if TYPE_CHECKING:
     from data import Target
 
@@ -38,5 +40,10 @@ class DiscreteRandomResize:
         device = images.device
         for target in targets:
             target["size"] = torch.tensor([resolution, resolution], dtype=torch.int64, device=device)
+
+            # Remove boxes that are smaller than a pixel at the new resolution
+            keep = (target["boxes"][:, 2:] * resolution >= 1).all(dim=-1)
+            for key in target.keys() & LABEL_KEYS:
+                target[key] = target[key][keep]
 
         return images, targets

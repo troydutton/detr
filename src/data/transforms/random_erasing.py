@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Sequence, Tuple
+from typing import TYPE_CHECKING, Sequence, Tuple, Union
 
 import torch
 import torchvision.transforms.v2 as T
@@ -39,7 +39,7 @@ class RandomErasingBoxAware:
         p: float = 0.5,
         scale: Sequence[float] = (0.02, 0.33),
         ratio: Sequence[float] = (0.3, 3.3),
-        value: float = 0.0,
+        value: Union[float, Sequence[float]] = 0.0,
         erased_threshold: float = 0.95,
     ) -> None:
         self.p = p

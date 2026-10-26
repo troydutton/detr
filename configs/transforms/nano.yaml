@@ -6,7 +6,7 @@ train:
 finetune:
   _target_: data.transforms.make_transformations
   split: finetune
-  resolution: 384
+  resolution: ${transforms.train.resolution}
 
 val:
   _target_: data.transforms.make_transformations

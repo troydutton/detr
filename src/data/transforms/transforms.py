@@ -65,7 +65,7 @@ def make_transformations(
                 T.RandomApply([T.RandomIoUCrop()], p=0.8),
                 T.Resize((resolution, resolution)),
                 T.RandomHorizontalFlip(),
-                RandomErasingBoxAware(p=0.33, value="random"),
+                RandomErasingBoxAware(p=0.33, value=[round(255 * mean) for mean in IMNET_MEAN]),
                 T.RandomPhotometricDistort(),
                 Mosaic(num_epochs=num_epochs, num_warmup_epochs=num_warmup_epochs, num_cooldown_epochs=num_cooldown_epochs),
                 T.RandomApply([T.RandomZoomOut(side_range=(1.0, 2.0), p=1.0), T.Resize((resolution, resolution))], p=0.5),
