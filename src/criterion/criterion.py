@@ -186,12 +186,12 @@ class Criterion:
         """
         Calculate the classification loss between predictions and target labels.
 
-        Uses an IoU-aware focal loss which assigns quality-based targets for matched predictions,
+        Uses an IoU-aware binary cross-entropy loss which assigns quality-based targets for matched predictions,
         and zero targets for unmatched predictions. Quality targets are the weighted geometric mean
         of the predicted class probability and the IoU, encouraging the model to align the classification
         and regression tasks. Specifically,
 
-        Matched:   - q * ((1 - p) ** γ) * log(p) - (1 - q) * (p ** γ) * log(1 - p)
+        Matched:   - q * log(p) - (1 - q) * log(1 - p)
         Unmatched: - (p ** γ) * log(1 - p)
 
         with q = (p^α) * (iou^(1-α))
@@ -214,13 +214,13 @@ class Criterion:
 
             quality = ((matched_prediction_probs**self.alpha) * (iou ** (1 - self.alpha))).clamp(min=0.01)
 
-        # Build positive weights: q * (1 - p) ** γ for matched, 0 for unmatched
+        # Build positive weights: q for matched, 0 for unmatched
         pos_weights = torch.zeros_like(prediction_probs)
-        pos_weights[*prediction_indices, target_labels] = (quality * ((1 - matched_prediction_probs) ** self.gamma)).to(pos_weights.dtype)
+        pos_weights[*prediction_indices, target_labels] = quality.to(pos_weights.dtype)
 
-        # Build negative weights: (1 -q) * (p ** γ) for matched, (p ** γ) for unmatched
+        # Build negative weights: (1 - q) for matched, (p ** γ) for unmatched
         neg_weights = prediction_probs**self.gamma
-        neg_weights[*prediction_indices, target_labels] *= (1 - quality).to(neg_weights.dtype)
+        neg_weights[*prediction_indices, target_labels] = (1 - quality).to(neg_weights.dtype)
 
         # Numerically stable variant of -positive_weights * log(p) - negative_weights * log(1 - p)
         class_loss = (neg_weights * prediction_logits - F.logsigmoid(prediction_logits) * (pos_weights + neg_weights)).sum()
