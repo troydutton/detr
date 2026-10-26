@@ -48,7 +48,10 @@ def test_discrete_random_resize() -> None:
     Test DiscreteRandomResize with a specific resolution.
     """
     images = torch.rand(2, 3, 100, 100)
-    targets = [{"size": torch.tensor([100, 100])}, {"size": torch.tensor([100, 100])}]
+    targets = [
+        {"size": torch.tensor([100, 100]), "boxes": torch.zeros(0, 4)},
+        {"size": torch.tensor([100, 100]), "boxes": torch.zeros(0, 4)},
+    ]
 
     # Test same resolution (no-op)
     transform = DiscreteRandomResize([100])
