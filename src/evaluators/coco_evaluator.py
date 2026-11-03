@@ -120,7 +120,7 @@ class CocoEvaluator(Evaluator):
         with silence_stdout():
             coco_predictions = self.coco_targets.loadRes(self.predictions)
 
-            coco_eval = COCOeval(self.coco_targets, coco_predictions, "bbox")
+            coco_eval = COCOeval(self.coco_targets, coco_predictions, "bbox", print_function=print)
             coco_eval.evaluate()
             coco_eval.accumulate()
             coco_eval.summarize()
