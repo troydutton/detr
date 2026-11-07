@@ -1,8 +1,10 @@
 import json
 import logging
+import pickle
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import PIL.Image
 import torch
 from pycocotools.coco import COCO
@@ -85,6 +87,11 @@ class CocoDataset(Dataset):
         self.coco = self._create_coco_dataset(self.roots)
         self.image_ids = list(self.coco.imgs.keys())
 
+        # Serialize each image's annotations into a single buffer, which forked workers can read without copying
+        records = [pickle.dumps((self.coco.imgs[image_id], self.coco.imgToAnns[image_id])) for image_id in self.image_ids]
+        self.record_offsets = np.cumsum([0] + [len(record) for record in records])
+        self.records = np.frombuffer(b"".join(records), dtype=np.uint8)
+
         # Mapping from category ids to contiguous 0-indexed labels
         category_ids = sorted(self.coco.getCatIds())
         self.category_id_to_label = {cat_id: i for i, cat_id in enumerate(category_ids)}
@@ -99,10 +106,8 @@ class CocoDataset(Dataset):
         """Retrieve an image and its corresponding annotations."""
 
         # Retrieve annotations and image information
-        image_id = self.image_ids[idx]
-        annotation_ids = self.coco.getAnnIds(imgIds=image_id)
-        annotations = self.coco.loadAnns(annotation_ids)
-        image_info = self.coco.loadImgs(image_id)[0]
+        image_info, annotations = pickle.loads(self.records[self.record_offsets[idx] : self.record_offsets[idx + 1]])
+        image_id = image_info["id"]
 
         # Load the image
         image = PIL.Image.open(image_info["file_name"]).convert("RGB")
