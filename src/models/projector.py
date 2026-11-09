@@ -83,39 +83,39 @@ class Projector(nn.Module):
 
         return output_features
 
-    def _build_resampling_layer(self, channels: int, in_stride: int, out_stride: int) -> nn.Module:
+    def _build_resampling_layer(self, in_channels: int, in_stride: int, out_stride: int) -> nn.Module:
         """Build a resampling layer to scale a feature map from `in_stride` to `out_stride`."""
 
         ratio = in_stride / out_stride
 
         if ratio == 4.0:  # Upsample 4x
             return nn.Sequential(
-                nn.ConvTranspose2d(channels, channels, kernel_size=2, stride=2),
-                LayerNorm2d(channels),
+                nn.ConvTranspose2d(in_channels, in_channels, kernel_size=2, stride=2),
+                LayerNorm2d(in_channels),
                 self.activation(),
-                nn.ConvTranspose2d(channels, channels, kernel_size=2, stride=2),
-                LayerNorm2d(channels),
+                nn.ConvTranspose2d(in_channels, in_channels, kernel_size=2, stride=2),
+                LayerNorm2d(in_channels),
             )
         elif ratio == 2.0:  # Upsample 2x
             return nn.Sequential(
-                nn.ConvTranspose2d(channels, channels, kernel_size=2, stride=2),
-                LayerNorm2d(channels),
+                nn.ConvTranspose2d(in_channels, in_channels, kernel_size=2, stride=2),
+                LayerNorm2d(in_channels),
             )
         elif ratio == 1.0:  # Do nothing
             return nn.Identity()
         elif ratio == 0.5:  # Downsample 2x
             return nn.Sequential(
-                nn.Conv2d(channels, channels, kernel_size=3, stride=2, padding=1, bias=False),
-                LayerNorm2d(channels),
+                nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=2, padding=1, bias=False),
+                LayerNorm2d(in_channels),
                 self.activation(),
             )
         elif ratio == 0.25:  # Downsample 4x
             return nn.Sequential(
-                nn.Conv2d(channels, channels, kernel_size=3, stride=2, padding=1, bias=False),
-                LayerNorm2d(channels),
+                nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=2, padding=1, bias=False),
+                LayerNorm2d(in_channels),
                 self.activation(),
-                nn.Conv2d(channels, channels, kernel_size=3, stride=2, padding=1, bias=False),
-                LayerNorm2d(channels),
+                nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=2, padding=1, bias=False),
+                LayerNorm2d(in_channels),
                 self.activation(),
             )
         else:
