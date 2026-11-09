@@ -14,7 +14,7 @@ class Projector(nn.Module):
     concatenates them, and fuses them efficiently using C2f blocks.
 
     Args:
-        embed_dim: The channel dimension for all input and output feature maps.
+        embed_dim: The channel dimension for all output feature maps.
         in_channels: List of input channel dimensions.
         in_strides: List of strides map relative to original image size, optional.
         out_strides: List of target spatial strides defining final feature sizes, optional.
@@ -40,34 +40,32 @@ class Projector(nn.Module):
         self.activation = activation
         self.num_output_levels = len(out_strides) if multi_scale else len(in_channels)
 
-        # Create projections from each backbone output to the desired embedding dimension
+        # When multi-scale fusion is disabled, we simply project each backbone feature to the desired embedding dimension,
+        # otherwise the first convolution of each fusion stage performs the projection
         self.projections = nn.ModuleList()
-        for in_channel in in_channels:
-            self.projections.append(nn.Conv2d(in_channel, embed_dim, kernel_size=1))
-
-        # When multi-scale fusion is disabled, we simply project each backbone feature
-        if self.multi_scale:
+        if not self.multi_scale:
+            for in_channel in in_channels:
+                self.projections.append(nn.Conv2d(in_channel, embed_dim, kernel_size=1))
+        else:
             # Create the spatial resampling stages
             self.resampling_stages = nn.ModuleList()
             for target_stride in out_strides:
                 resampling_layers = nn.ModuleList()
-                for in_stride in in_strides:
-                    resampling_layers.append(self._build_resampling_layer(embed_dim, in_stride, target_stride))
+                for in_channel, in_stride in zip(in_channels, in_strides):
+                    resampling_layers.append(self._build_resampling_layer(in_channel, in_stride, target_stride))
                 self.resampling_stages.append(resampling_layers)
 
             # Create the multi-scale feature fusion stages
             self.fusion_stages = nn.ModuleList()
             for _ in out_strides:
-                self.fusion_stages.append(C2f(embed_dim * len(in_strides), embed_dim // 2, embed_dim, num_blocks, activation))
+                self.fusion_stages.append(C2f(sum(in_channels), embed_dim // 2, embed_dim, num_blocks, activation))
 
         self._initialize_weights()
 
     def forward(self, backbone_features: List[Tensor]) -> List[Tensor]:
         # Project all features to the desired embedding dimension
-        backbone_features = [projection(feature) for projection, feature in zip(self.projections, backbone_features)]
-
         if not self.multi_scale:
-            return backbone_features
+            return [projection(feature) for projection, feature in zip(self.projections, backbone_features)]
 
         output_features = []
 
@@ -85,39 +83,39 @@ class Projector(nn.Module):
 
         return output_features
 
-    def _build_resampling_layer(self, embed_dim: int, in_stride: int, out_stride: int) -> nn.Module:
+    def _build_resampling_layer(self, channels: int, in_stride: int, out_stride: int) -> nn.Module:
         """Build a resampling layer to scale a feature map from `in_stride` to `out_stride`."""
 
         ratio = in_stride / out_stride
 
         if ratio == 4.0:  # Upsample 4x
             return nn.Sequential(
-                nn.ConvTranspose2d(embed_dim, embed_dim, kernel_size=2, stride=2),
-                LayerNorm2d(embed_dim),
+                nn.ConvTranspose2d(channels, channels, kernel_size=2, stride=2),
+                LayerNorm2d(channels),
                 self.activation(),
-                nn.ConvTranspose2d(embed_dim, embed_dim, kernel_size=2, stride=2),
-                LayerNorm2d(embed_dim),
+                nn.ConvTranspose2d(channels, channels, kernel_size=2, stride=2),
+                LayerNorm2d(channels),
             )
         elif ratio == 2.0:  # Upsample 2x
             return nn.Sequential(
-                nn.ConvTranspose2d(embed_dim, embed_dim, kernel_size=2, stride=2),
-                LayerNorm2d(embed_dim),
+                nn.ConvTranspose2d(channels, channels, kernel_size=2, stride=2),
+                LayerNorm2d(channels),
             )
         elif ratio == 1.0:  # Do nothing
             return nn.Identity()
         elif ratio == 0.5:  # Downsample 2x
             return nn.Sequential(
-                nn.Conv2d(embed_dim, embed_dim, kernel_size=3, stride=2, padding=1, bias=False),
-                LayerNorm2d(embed_dim),
+                nn.Conv2d(channels, channels, kernel_size=3, stride=2, padding=1, bias=False),
+                LayerNorm2d(channels),
                 self.activation(),
             )
         elif ratio == 0.25:  # Downsample 4x
             return nn.Sequential(
-                nn.Conv2d(embed_dim, embed_dim, kernel_size=3, stride=2, padding=1, bias=False),
-                LayerNorm2d(embed_dim),
+                nn.Conv2d(channels, channels, kernel_size=3, stride=2, padding=1, bias=False),
+                LayerNorm2d(channels),
                 self.activation(),
-                nn.Conv2d(embed_dim, embed_dim, kernel_size=3, stride=2, padding=1, bias=False),
-                LayerNorm2d(embed_dim),
+                nn.Conv2d(channels, channels, kernel_size=3, stride=2, padding=1, bias=False),
+                LayerNorm2d(channels),
                 self.activation(),
             )
         else:
