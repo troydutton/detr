@@ -40,13 +40,10 @@ class Projector(nn.Module):
         self.activation = activation
         self.num_output_levels = len(out_strides) if multi_scale else len(in_channels)
 
-        # When multi-scale fusion is disabled, we simply project each backbone feature to the desired embedding dimension,
-        # otherwise the first convolution of each fusion stage performs the projection
+        # When multi-scale fusion is enabled, the first convolution of each fusion stage performs the projection,
+        # otherwise we simply project each backbone feature to the desired embedding dimension
         self.projections = nn.ModuleList()
-        if not self.multi_scale:
-            for in_channel in in_channels:
-                self.projections.append(nn.Conv2d(in_channel, embed_dim, kernel_size=1))
-        else:
+        if self.multi_scale:
             # Create the spatial resampling stages
             self.resampling_stages = nn.ModuleList()
             for target_stride in out_strides:
@@ -59,6 +56,9 @@ class Projector(nn.Module):
             self.fusion_stages = nn.ModuleList()
             for _ in out_strides:
                 self.fusion_stages.append(C2f(sum(in_channels), embed_dim // 2, embed_dim, num_blocks, activation))
+        else:
+            for in_channel in in_channels:
+                self.projections.append(nn.Conv2d(in_channel, embed_dim, kernel_size=1))
 
         self._initialize_weights()
 
