@@ -1,8 +1,10 @@
 import json
 import logging
+import pickle
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import PIL.Image
 import torch
 from pycocotools.coco import COCO
@@ -81,12 +83,23 @@ class CocoDataset(Dataset):
             log_roots.append(f"and {len(self.roots) - 3} other datasets")
         logging.info(f"Loading {', '.join(log_roots)}.")
 
-        # Create a single COCO dataset from the provided roots
-        self.coco = self._create_coco_dataset(self.roots)
-        self.image_ids = list(self.coco.imgs.keys())
+        # Merge the provided roots into a single COCO-style dataset
+        dataset = self._merge_datasets(self.roots)
+        self.categories = dataset["categories"]
+        self.image_ids = [image_info["id"] for image_info in dataset["images"]]
+
+        # Group annotations by image
+        image_annotations = {image_id: [] for image_id in self.image_ids}
+        for annotation in dataset["annotations"]:
+            image_annotations[annotation["image_id"]].append(annotation)
+
+        # Serialize each image's annotations into a single buffer, which forked workers can read without copying
+        records = [pickle.dumps((image_info, image_annotations[image_info["id"]])) for image_info in dataset["images"]]
+        self.record_offsets = np.cumsum([0] + [len(record) for record in records])
+        self.records = np.frombuffer(b"".join(records), dtype=np.uint8)
 
         # Mapping from category ids to contiguous 0-indexed labels
-        category_ids = sorted(self.coco.getCatIds())
+        category_ids = sorted(category["id"] for category in self.categories)
         self.category_id_to_label = {cat_id: i for i, cat_id in enumerate(category_ids)}
         self.num_classes = len(self.category_id_to_label)
 
@@ -99,10 +112,8 @@ class CocoDataset(Dataset):
         """Retrieve an image and its corresponding annotations."""
 
         # Retrieve annotations and image information
-        image_id = self.image_ids[idx]
-        annotation_ids = self.coco.getAnnIds(imgIds=image_id)
-        annotations = self.coco.loadAnns(annotation_ids)
-        image_info = self.coco.loadImgs(image_id)[0]
+        image_info, annotations = pickle.loads(self.records[self.record_offsets[idx] : self.record_offsets[idx + 1]])
+        image_id = image_info["id"]
 
         # Load the image
         image = PIL.Image.open(image_info["file_name"]).convert("RGB")
@@ -167,8 +178,8 @@ class CocoDataset(Dataset):
 
         return target
 
-    def _create_coco_dataset(self, roots: List[Path]) -> COCO:
-        """Create a single COCO dataset from multiple roots."""
+    def _merge_datasets(self, roots: List[Path]) -> Dict[str, List[Dict[str, Any]]]:
+        """Merge COCO-style datasets from multiple roots."""
 
         dataset = {"images": [], "annotations": [], "categories": []}
 
@@ -229,16 +240,27 @@ class CocoDataset(Dataset):
 
             dataset["annotations"].extend(root_dataset["annotations"])
 
-        # Create a COCO object from the merged dataset
+        return dataset
+
+    @property
+    def coco(self) -> COCO:
+        """COCO index rebuilt from the serialized annotations on each access, used for evaluation."""
+
+        images, annotations = [], []
+        for idx in range(len(self)):
+            image_info, image_annotations = pickle.loads(self.records[self.record_offsets[idx] : self.record_offsets[idx + 1]])
+            images.append(image_info)
+            annotations.extend(image_annotations)
+
         with silence_stdout():
             coco = COCO()
-            coco.dataset = dataset
+            coco.dataset = {"images": images, "annotations": annotations, "categories": self.categories}
             coco.createIndex()
 
         return coco
 
     def get_categories(self) -> List[str]:
-        category_names = [self.coco.cats[i]["name"] for i in sorted(self.coco.cats.keys())]
+        category_names = [category["name"] for category in self.categories]
 
         return category_names
 

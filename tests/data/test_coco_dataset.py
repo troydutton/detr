@@ -139,6 +139,22 @@ def test_coco_dataset_transforms(coco_path: Path) -> None:
     assert is_box2_present, f"Expected box 2 {expected_box2} not found in transformed {boxes}"
 
 
+def test_coco_dataset_coco(coco_path: Path) -> None:
+    """
+    Test that the COCO index rebuilt from the serialized annotations matches the source annotations.
+    """
+    dataset = CocoDataset(str(coco_path), transforms=None)
+
+    with open(coco_path / "_annotations.coco.json") as f:
+        annotations = json.load(f)
+
+    coco = dataset.coco
+
+    assert coco.getImgIds() == [1]
+    assert coco.loadCats(coco.getCatIds()) == annotations["categories"]
+    assert coco.loadAnns(coco.getAnnIds()) == annotations["annotations"]
+
+
 def test_coco_dataset_multiple_roots(tmp_path: Path) -> None:
     """
     Test functionality with multiple dataset roots.
